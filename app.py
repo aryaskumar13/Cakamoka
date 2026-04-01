@@ -215,6 +215,32 @@ st.markdown("""
         color: #1d1d1f !important;
         border-bottom: 2px solid #1d1d1f !important;
     }
+
+    /* ---- Slider value labels ---- */
+    div[data-testid="stSlider"] [data-testid="stTickBarMin"],
+    div[data-testid="stSlider"] [data-testid="stTickBarMax"],
+    div[data-testid="stSlider"] p,
+    div[data-testid="stSlider"] span {
+        color: #1d1d1f !important;
+    }
+
+    /* Current selected value thumb label */
+    div[data-testid="stSlider"] div[data-testid="stThumbValue"] {
+        color: #1d1d1f !important;
+        background: #e8e8ed !important;
+        border-radius: 4px !important;
+        padding: 1px 6px !important;
+        font-weight: 600 !important;
+        font-size: 12px !important;
+    }
+
+    /* Slider track */
+    div[data-testid="stSlider"] > div > div > div {
+        background: #e8e8ed !important;
+    }
+    div[data-testid="stSlider"] > div > div > div > div {
+        background: #1d1d1f !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
