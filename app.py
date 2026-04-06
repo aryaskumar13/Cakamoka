@@ -1114,7 +1114,7 @@ if run_analysis or "analysis_done" in st.session_state:
         # Conclusion: which sample is closest to control and which param deviates most
         if ranked:
             top_sample = ranked[0]
-            top_score  = scores_series.get(top_sample, 0)
+            top_score = scores_series.get(top_sample, 0)
             # Find parameter with largest absolute % difference across all non-control samples
             max_dev_param, max_dev_val = None, 0.0
             for samp in non_ctrl:
@@ -1154,8 +1154,8 @@ if run_analysis or "analysis_done" in st.session_state:
                     furthest_pca = ranked[-1]
                     pca_conclusion = (
                         f"In texture space, <b>{closest_pca}</b> plots nearest to the control "
-                        f"and <b>{furthest_pca}</b> is the most distant."
-                        f" Samples that cluster together share a similar overall texture profile."
+                        f"and <b>{furthest_pca}</b> is the most distant. "
+                        f"Samples that cluster together share a similar overall texture profile."
                     )
                     st.markdown(
                         f"<div class='interp-block'>{pca_conclusion}</div>",
