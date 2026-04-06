@@ -1110,6 +1110,32 @@ if run_analysis or "analysis_done" in st.session_state:
         st.markdown("<p class='sub-text'>Mean values with standard deviation error bars. All parameters on a common axis for direct visual comparison.</p>", unsafe_allow_html=True)
         fig_bar = plot_bar_chart(means_df, sd_df, sample_colors)
         st.plotly_chart(fig_bar, use_container_width=True)
+
+        # Conclusion: which sample is closest to control and which param deviates most
+        if ranked:
+            top_sample = ranked[0]
+            top_score  = scores_series.get(top_sample, 0)
+            # Find parameter with largest absolute % difference across all non-control samples
+            max_dev_param, max_dev_val = None, 0.0
+            for samp in non_ctrl:
+                for param in ALL_PARAMS:
+                    p = pct_diff(means_df.loc[samp, param], means_df.loc[_control, param])
+                    if p is not None and abs(p) > abs(max_dev_val):
+                        max_dev_param, max_dev_val = param, p
+            bar_conclusion = (
+                f"<b>{top_sample}</b> is the most similar to the control "
+                f"(similarity score {top_score}/100)."
+            )
+            if max_dev_param:
+                direction = "higher" if max_dev_val > 0 else "lower"
+                bar_conclusion += (
+                    f" Across all test samples, <b>{max_dev_param}</b> shows the greatest "
+                    f"deviation — up to {abs(max_dev_val):.0f}% {direction} than control."
+                )
+            st.markdown(
+                f"<div class='interp-block'>{bar_conclusion}</div>",
+                unsafe_allow_html=True,
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 
         col_v1, col_v2 = st.columns(2)
@@ -1122,6 +1148,19 @@ if run_analysis or "analysis_done" in st.session_state:
                 fig_pca = plot_pca(z_df, sample_colors, _control)
                 if fig_pca:
                     st.plotly_chart(fig_pca, use_container_width=True)
+                # PCA conclusion: sample nearest to control in PC space
+                if ranked:
+                    closest_pca = ranked[0]
+                    furthest_pca = ranked[-1]
+                    pca_conclusion = (
+                        f"In texture space, <b>{closest_pca}</b> plots nearest to the control "
+                        f"and <b>{furthest_pca}</b> is the most distant."
+                        f" Samples that cluster together share a similar overall texture profile."
+                    )
+                    st.markdown(
+                        f"<div class='interp-block'>{pca_conclusion}</div>",
+                        unsafe_allow_html=True,
+                    )
             else:
                 st.info("PCA requires at least 2 samples.")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1133,6 +1172,24 @@ if run_analysis or "analysis_done" in st.session_state:
             if len(_samples) >= 2:
                 fig_radar = plot_radar(means_df, z_df, sample_colors, _control)
                 st.plotly_chart(fig_radar, use_container_width=True)
+                # Radar conclusion: largest z-score deviation from control
+                max_z_param, max_z_samp, max_z_val = None, None, 0.0
+                for samp in non_ctrl:
+                    for param in ALL_PARAMS:
+                        z_diff = abs(z_df.loc[samp, param] - z_df.loc[_control, param])
+                        if z_diff > max_z_val:
+                            max_z_param, max_z_samp, max_z_val = param, samp, z_diff
+                if max_z_param:
+                    radar_conclusion = (
+                        f"The largest deviation from the control profile occurs in "
+                        f"<b>{max_z_param}</b> for <b>{max_z_samp}</b> "
+                        f"({max_z_val:.2f} SD from control). "
+                        f"A smaller enclosed area relative to the control indicates a weaker overall texture."
+                    )
+                    st.markdown(
+                        f"<div class='interp-block'>{radar_conclusion}</div>",
+                        unsafe_allow_html=True,
+                    )
             else:
                 st.info("Radar chart requires at least 2 samples.")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1174,6 +1231,31 @@ if run_analysis or "analysis_done" in st.session_state:
             height=max(200, 60 * len(non_ctrl) + 80),
         )
         st.plotly_chart(fig_heat, use_container_width=True)
+
+        # Conclusion: most consistently different parameter and sample closest to control
+        if len(non_ctrl) > 0:
+            # Parameter with largest mean absolute % diff across all test samples
+            param_avg_diff = {
+                param: np.mean([abs(pct_hm_df.loc[s, param]) for s in pct_hm_df.index])
+                for param in pct_hm_df.columns
+            }
+            most_diff_param = max(param_avg_diff, key=lambda p: param_avg_diff[p])
+            # Sample with smallest mean absolute % diff (closest to control)
+            samp_avg_diff = {
+                s: np.mean([abs(pct_hm_df.loc[s, param]) for param in pct_hm_df.columns])
+                for s in pct_hm_df.index
+            }
+            closest_samp = min(samp_avg_diff, key=lambda s: samp_avg_diff[s])
+            heat_conclusion = (
+                f"<b>{most_diff_param}</b> shows the greatest average deviation from the control "
+                f"across all test samples ({param_avg_diff[most_diff_param]:.1f}% on average). "
+                f"<b>{closest_samp}</b> is the closest overall match to the control "
+                f"(mean absolute difference: {samp_avg_diff[closest_samp]:.1f}%)."
+            )
+            st.markdown(
+                f"<div class='interp-block'>{heat_conclusion}</div>",
+                unsafe_allow_html=True,
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 
 
