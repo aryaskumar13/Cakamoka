@@ -253,6 +253,25 @@ MAJOR_THRESH = 40   # % difference threshold for major
 MINOR_THRESH = 10   # % difference below which not shown
 SIG_ALPHA    = 0.05
 
+# Significance star thresholds
+SIG_STARS = [(0.001, "***"), (0.01, "**"), (0.05, "*")]
+
+# Cohen's d effect size classification thresholds (Cohen, 1988)
+COHENS_D_LARGE  = 0.8
+COHENS_D_MEDIUM = 0.5
+COHENS_D_SMALL  = 0.2
+
+# Crumb image analysis constants
+PORE_THRESHOLD_FACTOR = 0.5   # pores defined as pixels darker than mean - factor * std
+CRUMB_IDEAL_BRIGHTNESS = 145.0  # ideal mean pixel intensity for a golden crumb
+CRUMB_IDEAL_CONTRAST   = 37.5   # ideal pixel std for moderate porosity
+# Composite score weights (must sum to 1.0)
+CRUMB_WEIGHT_COLOR      = 0.35
+CRUMB_WEIGHT_CONTRAST   = 0.25
+CRUMB_WEIGHT_UNIFORMITY = 0.20
+CRUMB_WEIGHT_PORE_UNIF  = 0.20
+EPSILON = 1e-6  # small value to prevent division by zero
+
 # Apple-inspired discrete color palette for samples
 PALETTE = [
     "#0071e3",  # blue (control-ish)
@@ -331,6 +350,62 @@ def welch_t_from_summary(mean1, sd1, n1, mean2, sd2, n2):
     return float(p_val)
 
 
+def cohens_d_from_summary(mean1, sd1, n1, mean2, sd2, n2):
+    """
+    Cohen's d effect size (pooled SD) from summary statistics.
+    Positive value = mean1 > mean2 (sample > control).
+    Returns None if pooled SD is zero or if either group has fewer than 2 observations.
+    """
+    if n1 < 2 or n2 < 2:
+        return None
+    pooled_var = ((n1 - 1) * sd1 ** 2 + (n2 - 1) * sd2 ** 2) / (n1 + n2 - 2)
+    pooled_sd = np.sqrt(pooled_var)
+    if pooled_sd == 0:
+        return None
+    return (mean1 - mean2) / pooled_sd
+
+
+def sig_stars(p_val):
+    """Return significance stars string for a given p-value."""
+    if p_val is None:
+        return ""
+    for threshold, stars in SIG_STARS:
+        if p_val < threshold:
+            return stars
+    return ""
+
+
+def apply_fdr_correction(p_values: list) -> list:
+    """
+    Benjamini-Hochberg FDR correction.
+    None entries are excluded from the correction and returned as None.
+    Returns adjusted p-values in the same order as the input.
+    """
+    n_total = len(p_values)
+    if n_total == 0:
+        return []
+
+    # Separate valid p-values from None entries
+    valid = [(i, p) for i, p in enumerate(p_values) if p is not None]
+    adjusted = [None] * n_total
+
+    if not valid:
+        return adjusted
+
+    n_valid = len(valid)
+    # Sort by p-value ascending
+    sorted_valid = sorted(valid, key=lambda x: x[1])
+    prev_adj = 1.0
+    # Iterate from largest to smallest p-value
+    for rank, (orig_i, p) in enumerate(reversed(sorted_valid), 1):
+        adj = p * n_valid / (n_valid - rank + 1)
+        adj = min(adj, prev_adj)
+        prev_adj = adj
+        adjusted[orig_i] = min(adj, 1.0)
+
+    return adjusted
+
+
 def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samples: list, n_replicates: int) -> dict:
     """
     Two-sample Welch t-test for each sample vs control, per parameter.
@@ -343,7 +418,8 @@ def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samp
          when n is small (< 3).
       3. Never fabricate data points from mean ± SD (removed).
 
-    Returns dict: {sample: {param: {"p": float|None, "method": str, "n_ctrl": int, "n_samp": int}}}
+    Returns dict: {sample: {param: {"p": float|None, "d": float|None, "method": str, "n_ctrl": int, "n_samp": int}}}
+    Also returns FDR-adjusted p-values across all tests for each sample.
     """
     results = {}
     ctrl_raw = raw_data.get(control, {})
@@ -356,6 +432,9 @@ def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samp
         samp_raw = raw_data.get(samp, {})
         samp_sum = summary_data.get(samp, {})
 
+        raw_p_values = []
+        param_order  = []
+
         for param in ALL_PARAMS:
             ctrl_reps = ctrl_raw.get(param, [])
             samp_reps = samp_raw.get(param, [])
@@ -365,6 +444,10 @@ def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samp
                 _, p = stats.ttest_ind(ctrl_reps, samp_reps, equal_var=False)
                 method = "Welch t-test (replicates)"
                 n_c, n_s = len(ctrl_reps), len(samp_reps)
+                c_m = float(np.mean(ctrl_reps))
+                c_s = float(np.std(ctrl_reps, ddof=1)) if len(ctrl_reps) > 1 else 0.0
+                s_m = float(np.mean(samp_reps))
+                s_s = float(np.std(samp_reps, ddof=1)) if len(samp_reps) > 1 else 0.0
             else:
                 # Path 2: analytical Welch from summary stats
                 c_m = ctrl_sum.get(param, {}).get("mean", None)
@@ -373,15 +456,29 @@ def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samp
                 s_m = samp_sum.get(param, {}).get("mean", None)
                 s_s = samp_sum.get(param, {}).get("sd",   None)
                 s_n = samp_sum.get(param, {}).get("n",    n_replicates)
+                n_c, n_s = c_n, s_n
 
                 if all(v is not None for v in [c_m, c_s, s_m, s_s]) and c_n >= 2 and s_n >= 2:
                     p = welch_t_from_summary(c_m, c_s, c_n, s_m, s_s, s_n)
                     method = "Welch t-test (summary stats)"
-                    n_c, n_s = c_n, s_n
                 else:
                     p, method, n_c, n_s = None, "insufficient data", 0, 0
+                    c_m = c_s = s_m = s_s = None
 
-            samp_results[param] = {"p": p, "method": method, "n_ctrl": n_c, "n_samp": n_s}
+            # Cohen's d
+            d = None
+            if c_m is not None and c_s is not None and s_m is not None and s_s is not None and n_c >= 2 and n_s >= 2:
+                d = cohens_d_from_summary(s_m, s_s, n_s, c_m, c_s, n_c)
+
+            samp_results[param] = {"p": p, "d": d, "method": method, "n_ctrl": n_c, "n_samp": n_s}
+            raw_p_values.append(p)
+            param_order.append(param)
+
+        # Apply FDR correction across all parameters for this sample
+        adj_p_values = apply_fdr_correction(raw_p_values)
+        for i, param in enumerate(param_order):
+            samp_results[param]["p_fdr"] = adj_p_values[i]
+
         results[samp] = samp_results
     return results
 
@@ -598,23 +695,54 @@ def plot_radar(means_df: pd.DataFrame, z_df: pd.DataFrame, sample_colors: dict, 
 
 def analyze_crumb_image(img: Image.Image) -> dict:
     """
-    Lightweight rule-based crumb image analysis using brightness, contrast, and edge density.
-    Returns a dict with observations and inferences.
+    Advanced rule-based crumb image analysis.
+
+    Metrics computed:
+    - Brightness (mean pixel intensity)
+    - Contrast (standard deviation of pixel intensities)
+    - Edge Density (mean absolute gradient — proxy for cell wall density)
+    - Uniformity (1 - CV, coefficient of variation of pixel intensities)
+    - Skewness and Kurtosis of the pixel histogram
+    - Pore Count and estimated mean pore area (via connected-component labelling
+      of thresholded dark regions)
+    - Composite Crumb Quality Score (0–100, higher = more desirable texture)
+
+    Returns a dict with raw metrics, classification notes, and a composite score.
     """
-    import numpy as np
+    from scipy.ndimage import label as nd_label
+    from scipy.stats import skew as sp_skew, kurtosis as sp_kurt
 
     img_gray = img.convert("L")
     arr = np.array(img_gray, dtype=float)
 
-    brightness  = arr.mean()          # 0-255
-    contrast    = arr.std()           # spread
-    # Simple edge proxy: variance of Laplacian-like gradient
-    from numpy import gradient
+    # ── Basic statistics ──────────────────────────────────────────────────────
+    brightness   = arr.mean()
+    contrast     = arr.std()
+    uniformity   = max(0.0, 1.0 - (contrast / max(brightness, EPSILON)))
+    flat_arr     = arr.flatten()
+    hist_skew    = float(sp_skew(flat_arr))
+    hist_kurt    = float(sp_kurt(flat_arr, fisher=True))  # excess kurtosis
+
+    # ── Edge density (Laplacian-like gradient) ────────────────────────────────
     gx = np.abs(np.diff(arr, axis=1)).mean()
     gy = np.abs(np.diff(arr, axis=0)).mean()
     edge_density = (gx + gy) / 2.0
 
-    # Classify
+    # ── Pore analysis via connected-component labelling ───────────────────────
+    # Pores are darker-than-average regions; threshold at mean - PORE_THRESHOLD_FACTOR * std
+    pore_threshold = max(0.0, brightness - PORE_THRESHOLD_FACTOR * contrast)
+    pore_mask      = arr < pore_threshold
+    labeled_arr, pore_count = nd_label(pore_mask)
+    if pore_count > 0:
+        component_sizes = np.bincount(labeled_arr.ravel())[1:]  # exclude background (label 0)
+        mean_pore_area  = float(component_sizes.mean())
+        pore_uniformity = float(1.0 - (component_sizes.std() / (component_sizes.mean() + EPSILON)))
+        pore_uniformity = max(0.0, min(1.0, pore_uniformity))
+    else:
+        mean_pore_area  = 0.0
+        pore_uniformity = 1.0
+
+    # ── Classification notes ──────────────────────────────────────────────────
     if brightness < 90:
         crust_note = "Dark crumb — could indicate caramelisation, cocoa, or over-baking."
         bake_note  = "Potential over-bake or high-sugar formulation."
@@ -626,31 +754,76 @@ def analyze_crumb_image(img: Image.Image) -> dict:
         bake_note  = "Bake level appears standard."
 
     if contrast > 55:
-        pore_note  = "High contrast indicates visible, non-uniform pores — open, irregular crumb structure."
-        airy_note  = "Structure appears porous / airy."
+        pore_note = "High contrast — visible, non-uniform pores; open, irregular crumb structure."
+        airy_note = "Structure appears porous / airy."
     elif contrast < 25:
-        pore_note  = "Low contrast indicates a dense, tight crumb with minimal visible pores."
-        airy_note  = "Structure appears dense / compact."
+        pore_note = "Low contrast — dense, tight crumb with minimal visible pores."
+        airy_note = "Structure appears dense / compact."
     else:
-        pore_note  = "Moderate contrast — medium crumb porosity."
-        airy_note  = "Structure appears intermediate."
+        pore_note = "Moderate contrast — medium crumb porosity."
+        airy_note = "Structure appears intermediate."
 
     if edge_density > 15:
-        texture_note = "High edge density — many crumb cell walls visible, suggesting a fine, tight cell structure."
+        texture_note = "High edge density — many crumb cell walls visible; fine, tight cell structure."
     elif edge_density < 6:
-        texture_note = "Low edge density — large or ill-defined crumb cells, consistent with a coarse or open structure."
+        texture_note = "Low edge density — large or ill-defined crumb cells; coarse or open structure."
     else:
         texture_note = "Moderate edge density — balanced crumb cell definition."
 
+    if pore_count > 500:
+        pore_count_note = f"Many small pores detected ({pore_count}) — fine, uniform crumb structure."
+    elif pore_count > 100:
+        pore_count_note = f"Moderate number of pores ({pore_count}) — typical crumb porosity."
+    elif pore_count > 0:
+        pore_count_note = f"Few pores detected ({pore_count}) — dense or very tight crumb."
+    else:
+        pore_count_note = "No distinct pore regions detected — extremely dense or uniform crumb."
+
+    if hist_skew > 0.5:
+        skew_note = f"Right-skewed histogram (skew={hist_skew:.2f}) — darker areas dominate the crumb."
+    elif hist_skew < -0.5:
+        skew_note = f"Left-skewed histogram (skew={hist_skew:.2f}) — brighter areas dominate the crumb."
+    else:
+        skew_note = f"Symmetric histogram (skew={hist_skew:.2f}) — balanced light/dark distribution."
+
+    # ── Composite Crumb Quality Score (0–100) ────────────────────────────────
+    # Components:
+    #   1. Color score: penalise extreme brightness (ideal ≈ CRUMB_IDEAL_BRIGHTNESS for golden crumb)
+    #   2. Contrast score: moderate contrast is ideal (≈ CRUMB_IDEAL_CONTRAST)
+    #   3. Uniformity score: higher is better
+    #   4. Pore uniformity: higher is better
+    color_score    = max(0.0, 100.0 - abs(brightness - CRUMB_IDEAL_BRIGHTNESS) * 0.8)
+    contrast_score = max(0.0, 100.0 - abs(contrast - CRUMB_IDEAL_CONTRAST) * 1.2)
+    uniformity_score = uniformity * 100.0
+    pore_unif_score  = pore_uniformity * 100.0
+
+    composite_score = round(
+        CRUMB_WEIGHT_COLOR      * color_score +
+        CRUMB_WEIGHT_CONTRAST   * contrast_score +
+        CRUMB_WEIGHT_UNIFORMITY * uniformity_score +
+        CRUMB_WEIGHT_PORE_UNIF  * pore_unif_score
+    )
+    composite_score = max(0, min(100, composite_score))
+
     return {
-        "Brightness":   round(brightness, 1),
-        "Contrast":     round(contrast, 1),
-        "Edge Density": round(edge_density, 2),
-        "Crumb Color":  crust_note,
-        "Bake Level":   bake_note,
-        "Pore Structure": pore_note,
-        "Aeration":     airy_note,
-        "Cell Structure": texture_note,
+        "Brightness":       round(brightness, 1),
+        "Contrast":         round(contrast, 1),
+        "Edge Density":     round(edge_density, 2),
+        "Uniformity":       round(uniformity, 3),
+        "Histogram Skew":   round(hist_skew, 3),
+        "Histogram Kurtosis": round(hist_kurt, 3),
+        "Pore Count":       int(pore_count),
+        "Mean Pore Area (px²)": round(mean_pore_area, 1),
+        "Pore Uniformity":  round(pore_uniformity, 3),
+        "Composite Score":  composite_score,
+        # Classification notes
+        "Crumb Color":      crust_note,
+        "Bake Level":       bake_note,
+        "Pore Structure":   pore_note,
+        "Aeration":         airy_note,
+        "Cell Structure":   texture_note,
+        "Pore Count Note":  pore_count_note,
+        "Skew Note":        skew_note,
     }
 
 
@@ -679,6 +852,11 @@ with st.sidebar:
                              help="Percentage difference above which a parameter is flagged as 'major'.")
     show_minor_thresh = st.slider("Minimum % diff to display", min_value=5, max_value=25, value=10, step=5,
                                   help="Differences smaller than this are omitted from the report.")
+    use_fdr = st.checkbox(
+        "Apply FDR correction (Benjamini-Hochberg)",
+        value=False,
+        help="Adjusts p-values for multiple comparisons across all parameters within each sample. Reduces false positives when testing 6 parameters simultaneously.",
+    )
 
     st.markdown("<hr style='border:none;border-top:1px solid #e8e8ed;margin:16px 0;'>", unsafe_allow_html=True)
     st.markdown("<p class='section-title'>Replicates</p>", unsafe_allow_html=True)
@@ -900,6 +1078,7 @@ if run_analysis or "analysis_done" in st.session_state:
         st.session_state["control"]       = control_sample
         st.session_state["major_thresh"]  = major_thresh
         st.session_state["minor_thresh"]  = show_minor_thresh
+        st.session_state["use_fdr"]       = use_fdr
 
     # Retrieve from session
     _input   = st.session_state.get("input_data", input_data)
@@ -907,6 +1086,7 @@ if run_analysis or "analysis_done" in st.session_state:
     _control = st.session_state.get("control", control_sample)
     _major   = st.session_state.get("major_thresh", major_thresh)
     _minor   = st.session_state.get("minor_thresh", show_minor_thresh)
+    _fdr     = st.session_state.get("use_fdr", use_fdr)
 
     means_df, sd_df = build_means_sd_df(_input, _samples)
     raw_data, summary_data = build_raw_and_summary(_input, _samples, int(n_replicates))
@@ -976,17 +1156,18 @@ if run_analysis or "analysis_done" in st.session_state:
             # Filtered diffs (above minor threshold)
             shown_pct = {k: v for k, v in all_pct.items() if abs(v) >= _minor}
 
-            # Significant params
+            # Significant params (using raw or FDR-adjusted p based on setting)
             sig_params = []
             low_power_warning = False
             if samp in stat_results:
                 for param, test in stat_results[samp].items():
-                    pval   = test.get("p")
+                    pval   = test.get("p_fdr" if _fdr else "p")
                     method = test.get("method", "")
                     n_c    = test.get("n_ctrl", 0)
                     n_s    = test.get("n_samp", 0)
+                    d_val  = test.get("d")
                     if pval is not None and pval < SIG_ALPHA:
-                        sig_params.append((param, pval, method, n_c, n_s))
+                        sig_params.append((param, pval, method, n_c, n_s, d_val))
                     if n_c < 3 or n_s < 3:
                         low_power_warning = True
 
@@ -1039,21 +1220,34 @@ if run_analysis or "analysis_done" in st.session_state:
 
             # Column 2: Statistical significance
             with r_col2:
-                st.markdown("<p class='section-title'>Statistical Tests</p>", unsafe_allow_html=True)
+                p_label = "p (FDR-adjusted)" if _fdr else "p (unadjusted)"
+                st.markdown(f"<p class='section-title'>Statistical Tests — {p_label}</p>", unsafe_allow_html=True)
                 if sig_params:
-                    for param, pval, method, n_c, n_s in sorted(sig_params, key=lambda x: x[1]):
-                        # Format p-value: use scientific notation below 0.001 so it never displays as 0.0000
+                    for param, pval, method, n_c, n_s, d_val in sorted(sig_params, key=lambda x: x[1]):
                         if pval < 0.001:
                             p_display = f"{pval:.2e}"
                         else:
                             p_display = f"{pval:.4f}"
+                        stars = sig_stars(pval)
+                        d_str = ""
+                        if d_val is not None:
+                            d_abs = abs(d_val)
+                            if d_abs >= COHENS_D_LARGE:
+                                d_label = "large"
+                            elif d_abs >= COHENS_D_MEDIUM:
+                                d_label = "medium"
+                            elif d_abs >= COHENS_D_SMALL:
+                                d_label = "small"
+                            else:
+                                d_label = "negligible"
+                            d_str = f"&nbsp;&nbsp;d={d_val:.2f} ({d_label})"
                         st.markdown(
                             f"<div style='display:flex;align-items:center;margin-bottom:8px;'>"
                             f"<span style='font-size:14px;color:#1d1d1f;font-weight:500;flex:1;'>{param}</span>"
-                            f"<span class='tag-sig'>p = {p_display}</span>"
+                            f"<span class='tag-sig'>p = {p_display} {stars}</span>"
                             f"</div>"
                             f"<p style='font-size:11px;color:#aeaeb2;margin-top:-6px;margin-bottom:8px;'>"
-                            f"{method} &nbsp;|&nbsp; ctrl n={n_c}, sample n={n_s}</p>",
+                            f"{method} &nbsp;|&nbsp; ctrl n={n_c}, sample n={n_s}{d_str}</p>",
                             unsafe_allow_html=True,
                         )
                 else:
@@ -1089,6 +1283,39 @@ if run_analysis or "analysis_done" in st.session_state:
                 st.markdown(f"<div class='interp-block'>{content}</div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── P-VALUE SUMMARY MATRIX ──
+        with st.expander("Statistical Summary — p-value & Effect Size Matrix"):
+            p_label_col = "p (FDR-adj.)" if _fdr else "p (unadjusted)"
+            matrix_rows = []
+            for samp in ranked:
+                if samp not in stat_results:
+                    continue
+                row = {"Sample": samp}
+                for param in ALL_PARAMS:
+                    test   = stat_results[samp].get(param, {})
+                    pval   = test.get("p_fdr" if _fdr else "p")
+                    d_val  = test.get("d")
+                    if pval is not None:
+                        stars = sig_stars(pval)
+                        if pval < 0.001:
+                            p_str = f"{pval:.2e}{stars}"
+                        else:
+                            p_str = f"{pval:.4f}{stars}"
+                    else:
+                        p_str = "—"
+                    d_str = f"{d_val:.2f}" if d_val is not None else "—"
+                    row[f"{param} {p_label_col}"] = p_str
+                    row[f"{param} Cohen's d"]     = d_str
+                matrix_rows.append(row)
+            if matrix_rows:
+                matrix_df = pd.DataFrame(matrix_rows).set_index("Sample")
+                st.dataframe(matrix_df, use_container_width=True)
+                st.markdown(
+                    "<p class='sub-text' style='margin-top:8px;'>Significance stars: *** p&lt;0.001 &nbsp; ** p&lt;0.01 &nbsp; * p&lt;0.05. "
+                    "Cohen's d: |d| ≥ 0.8 large, ≥ 0.5 medium, ≥ 0.2 small.</p>",
+                    unsafe_allow_html=True,
+                )
 
         # ── RAW DATA TABLE ──
         with st.expander("Raw Data — Means & Standard Deviations"):
@@ -1200,20 +1427,47 @@ with tab_image:
             result = analyze_crumb_image(img)
 
             st.markdown(f"<div class='card'>", unsafe_allow_html=True)
-            st.markdown(f"<p class='section-title'>{img_file.name}</p>", unsafe_allow_html=True)
+
+            # Header with composite score badge
+            composite = result["Composite Score"]
+            if composite >= 70:
+                score_color = "#30d158"
+            elif composite >= 45:
+                score_color = "#ff9f0a"
+            else:
+                score_color = "#ff375f"
+
+            hdr_col1, hdr_col2 = st.columns([3, 1])
+            with hdr_col1:
+                st.markdown(f"<p class='section-title'>{img_file.name}</p>", unsafe_allow_html=True)
+                st.markdown(f"<div class='sub-text'>{result['Aeration']} {result['Crumb Color']}</div>", unsafe_allow_html=True)
+            with hdr_col2:
+                st.markdown(
+                    f"<div style='text-align:right;'>"
+                    f"<div class='score-big' style='color:{score_color};'>{composite}</div>"
+                    f"<div class='score-label'>Crumb Quality / 100</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
 
             img_col, info_col = st.columns([1, 2])
             with img_col:
                 st.image(img, use_container_width=True)
+
             with info_col:
+                # Primary metrics
                 metric_items = [
-                    ("Brightness", f"{result['Brightness']} / 255", result["Bake Level"]),
-                    ("Contrast",   f"{result['Contrast']}",         result["Pore Structure"]),
-                    ("Edge Density", f"{result['Edge Density']}",   result["Cell Structure"]),
+                    ("Brightness",   f"{result['Brightness']} / 255",        result["Bake Level"]),
+                    ("Contrast",     f"{result['Contrast']}",                 result["Pore Structure"]),
+                    ("Edge Density", f"{result['Edge Density']}",             result["Cell Structure"]),
+                    ("Uniformity",   f"{result['Uniformity']:.3f}",           "1.0 = perfectly uniform pixel distribution."),
+                    ("Histogram Skew", f"{result['Histogram Skew']:.3f}",     result["Skew Note"]),
                 ]
                 for label, value, note in metric_items:
                     st.markdown(
-                        f"<div style='margin-bottom:14px;'>"
+                        f"<div style='margin-bottom:12px;'>"
                         f"<span style='font-size:13px;font-weight:600;color:#1d1d1f;'>{label}:</span> "
                         f"<span style='font-size:13px;color:#3a3a3c;'>{value}</span><br>"
                         f"<span class='sub-text'>{note}</span>"
@@ -1221,13 +1475,76 @@ with tab_image:
                         unsafe_allow_html=True,
                     )
 
-                st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
+            # Pore analysis row
+            st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
+            p_col1, p_col2, p_col3 = st.columns(3)
+            with p_col1:
                 st.markdown(
-                    f"<div class='interp-block'>"
-                    f"<b>Summary:</b><br>{result['Aeration']} {result['Crumb Color']}"
+                    f"<div style='margin-bottom:8px;'>"
+                    f"<span style='font-size:13px;font-weight:600;color:#1d1d1f;'>Pore Count:</span> "
+                    f"<span style='font-size:13px;color:#3a3a3c;'>{result['Pore Count']}</span><br>"
+                    f"<span class='sub-text'>{result['Pore Count Note']}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+            with p_col2:
+                st.markdown(
+                    f"<div style='margin-bottom:8px;'>"
+                    f"<span style='font-size:13px;font-weight:600;color:#1d1d1f;'>Mean Pore Area:</span> "
+                    f"<span style='font-size:13px;color:#3a3a3c;'>{result['Mean Pore Area (px²)']} px²</span><br>"
+                    f"<span class='sub-text'>Average area of detected dark regions (pores).</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with p_col3:
+                st.markdown(
+                    f"<div style='margin-bottom:8px;'>"
+                    f"<span style='font-size:13px;font-weight:600;color:#1d1d1f;'>Pore Uniformity:</span> "
+                    f"<span style='font-size:13px;color:#3a3a3c;'>{result['Pore Uniformity']:.3f}</span><br>"
+                    f"<span class='sub-text'>Closer to 1.0 = more uniform pore sizes.</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # Pixel histogram
+            img_gray_arr = np.array(img.convert("L"), dtype=float).flatten()
+            hist_counts, hist_bins = np.histogram(img_gray_arr, bins=64, range=(0, 255))
+            bin_centers = (hist_bins[:-1] + hist_bins[1:]) / 2
+
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Bar(
+                x=bin_centers,
+                y=hist_counts,
+                marker_color="#0071e3",
+                marker_line_width=0,
+                name="Pixel count",
+            ))
+            fig_hist.update_layout(
+                title=dict(text="Pixel Intensity Histogram", font=dict(size=14, family="Inter", color="#1d1d1f"), x=0.0),
+                xaxis=dict(title="Intensity (0=dark, 255=bright)", showgrid=False, tickfont=dict(size=11)),
+                yaxis=dict(title="Pixel count", gridcolor="#f0f0f0", tickfont=dict(size=11)),
+                plot_bgcolor="#ffffff",
+                paper_bgcolor="#ffffff",
+                font=dict(family="Inter", color="#1d1d1f"),
+                height=260,
+                margin=dict(l=40, r=20, t=40, b=40),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+            # Summary interpretation
+            st.markdown(
+                f"<div class='interp-block'>"
+                f"<b>Summary:</b><br>"
+                f"&bull; {result['Bake Level']}<br>"
+                f"&bull; {result['Pore Structure']}<br>"
+                f"&bull; {result['Cell Structure']}<br>"
+                f"&bull; {result['Pore Count Note']}<br>"
+                f"&bull; {result['Skew Note']}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown("""
