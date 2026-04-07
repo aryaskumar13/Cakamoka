@@ -593,28 +593,62 @@ def plot_radar(means_df: pd.DataFrame, z_df: pd.DataFrame, sample_colors: dict, 
 
 
 # ─────────────────────────────────────────────
-# IMAGE ANALYSIS (vision-free, rule-based)
+# IMAGE ANALYSIS
 # ─────────────────────────────────────────────
+
+try:
+    import cv2
+    _CV2_AVAILABLE = True
+    _CV2_IMPORT_ERROR: str | None = None
+except ImportError as _exc:
+    cv2 = None  # type: ignore[assignment]
+    _CV2_AVAILABLE = False
+    _CV2_IMPORT_ERROR = str(_exc)
+
 
 def analyze_crumb_image(img: Image.Image) -> dict:
     """
-    Lightweight rule-based crumb image analysis using brightness, contrast, and edge density.
-    Returns a dict with observations and inferences.
-    """
-    import numpy as np
+    Crumb image analysis using brightness, contrast, and edge density.
 
+    When opencv-python is installed the advanced pipeline is used:
+    Gaussian pre-processing, Canny edge detection and contour-based
+    pore counting give more precise estimates of edge density and
+    aeration.  When cv2 is unavailable a lightweight numpy/PIL
+    fallback is used instead.
+
+    Returns a dict with observations and inferences, plus a boolean
+    key ``"advanced_pipeline"`` indicating which path was taken.
+    """
     img_gray = img.convert("L")
     arr = np.array(img_gray, dtype=float)
 
-    brightness  = arr.mean()          # 0-255
-    contrast    = arr.std()           # spread
-    # Simple edge proxy: variance of Laplacian-like gradient
-    from numpy import gradient
-    gx = np.abs(np.diff(arr, axis=1)).mean()
-    gy = np.abs(np.diff(arr, axis=0)).mean()
-    edge_density = (gx + gy) / 2.0
+    brightness = arr.mean()
+    contrast   = arr.std()
 
-    # Classify
+    if _CV2_AVAILABLE:
+        # ── Advanced pipeline ──────────────────────────────────────
+        gray_u8  = np.array(img_gray, dtype=np.uint8)
+        blurred  = cv2.GaussianBlur(gray_u8, (5, 5), 0)
+        edges    = cv2.Canny(blurred, threshold1=30, threshold2=90)
+        edge_density = float(edges.mean())          # 0-255 mean of binary edge map
+
+        # Count distinct pore-like contours in the edge map.
+        # MIN_PORE_AREA_RATIO filters out single-pixel noise: a pore must
+        # cover at least 0.0005 % of total pixels to be counted.
+        MIN_PORE_AREA_RATIO = 0.000005
+        contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        min_pore_px  = max(4, int(gray_u8.size * MIN_PORE_AREA_RATIO))
+        pore_count   = sum(1 for c in contours if cv2.contourArea(c) >= min_pore_px)
+        advanced     = True
+    else:
+        # ── Lightweight fallback ───────────────────────────────────
+        gx = np.abs(np.diff(arr, axis=1)).mean()
+        gy = np.abs(np.diff(arr, axis=0)).mean()
+        edge_density = (gx + gy) / 2.0
+        pore_count   = None
+        advanced     = False
+
+    # ── Classification ────────────────────────────────────────────
     if brightness < 90:
         crust_note = "Dark crumb — could indicate caramelisation, cocoa, or over-baking."
         bake_note  = "Potential over-bake or high-sugar formulation."
@@ -626,32 +660,42 @@ def analyze_crumb_image(img: Image.Image) -> dict:
         bake_note  = "Bake level appears standard."
 
     if contrast > 55:
-        pore_note  = "High contrast indicates visible, non-uniform pores — open, irregular crumb structure."
-        airy_note  = "Structure appears porous / airy."
+        pore_note = "High contrast indicates visible, non-uniform pores — open, irregular crumb structure."
+        airy_note = "Structure appears porous / airy."
     elif contrast < 25:
-        pore_note  = "Low contrast indicates a dense, tight crumb with minimal visible pores."
-        airy_note  = "Structure appears dense / compact."
+        pore_note = "Low contrast indicates a dense, tight crumb with minimal visible pores."
+        airy_note = "Structure appears dense / compact."
     else:
-        pore_note  = "Moderate contrast — medium crumb porosity."
-        airy_note  = "Structure appears intermediate."
+        pore_note = "Moderate contrast — medium crumb porosity."
+        airy_note = "Structure appears intermediate."
 
-    if edge_density > 15:
+    # Edge-density thresholds differ between pipelines
+    if advanced:
+        high_edge, low_edge = 8.0, 2.5
+    else:
+        high_edge, low_edge = 15.0, 6.0
+
+    if edge_density > high_edge:
         texture_note = "High edge density — many crumb cell walls visible, suggesting a fine, tight cell structure."
-    elif edge_density < 6:
+    elif edge_density < low_edge:
         texture_note = "Low edge density — large or ill-defined crumb cells, consistent with a coarse or open structure."
     else:
         texture_note = "Moderate edge density — balanced crumb cell definition."
 
-    return {
-        "Brightness":   round(brightness, 1),
-        "Contrast":     round(contrast, 1),
-        "Edge Density": round(edge_density, 2),
-        "Crumb Color":  crust_note,
-        "Bake Level":   bake_note,
-        "Pore Structure": pore_note,
-        "Aeration":     airy_note,
-        "Cell Structure": texture_note,
+    result = {
+        "Brightness":        round(brightness, 1),
+        "Contrast":          round(contrast, 1),
+        "Edge Density":      round(edge_density, 2),
+        "Crumb Color":       crust_note,
+        "Bake Level":        bake_note,
+        "Pore Structure":    pore_note,
+        "Aeration":          airy_note,
+        "Cell Structure":    texture_note,
+        "advanced_pipeline": advanced,
     }
+    if pore_count is not None:
+        result["Pore Count"] = pore_count
+    return result
 
 
 # ─────────────────────────────────────────────
@@ -1186,6 +1230,14 @@ with tab_image:
     st.markdown("<p class='section-title'>Crumb Image Analysis</p>", unsafe_allow_html=True)
     st.markdown("<p class='sub-text'>Upload a photograph of a cake cross-section. The tool performs an automated visual analysis of crumb color, pore structure, and cell wall definition using image processing. For best results, use a well-lit, close-up shot of the cut face.</p>", unsafe_allow_html=True)
 
+    if not _CV2_AVAILABLE:
+        st.warning(
+            "Advanced crumb pipeline is unavailable in this environment. "
+            f"Import error: {_CV2_IMPORT_ERROR}. "
+            "Install dependencies from requirements.txt, then restart Streamlit.",
+            icon="⚠️",
+        )
+
     uploaded_images = st.file_uploader(
         "Upload one or more cake cross-section images",
         type=["jpg", "jpeg", "png", "bmp", "tiff"],
@@ -1211,6 +1263,8 @@ with tab_image:
                     ("Contrast",   f"{result['Contrast']}",         result["Pore Structure"]),
                     ("Edge Density", f"{result['Edge Density']}",   result["Cell Structure"]),
                 ]
+                if result.get("Pore Count") is not None:
+                    metric_items.append(("Pore Count", str(result["Pore Count"]), "Distinct pore-like contours detected by the advanced pipeline."))
                 for label, value, note in metric_items:
                     st.markdown(
                         f"<div style='margin-bottom:14px;'>"
