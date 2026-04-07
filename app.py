@@ -692,6 +692,12 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    st.markdown("<hr style='border:none;border-top:1px solid #e8e8ed;margin:16px 0;'>", unsafe_allow_html=True)
+    if st.button("🔄 Reboot App", use_container_width=True, help="Clear all results and start over"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+
 
 # ─────────────────────────────────────────────
 # MAIN HEADER
