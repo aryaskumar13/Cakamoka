@@ -23,439 +23,375 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
-<style>
-    /* ---- Typography & base ---- */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-
-    /* ---- Main background ---- */
-    .stApp { background-color: #f5f5f7; }
-
-    /* ---- Sidebar ---- */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e0e0e0;
-    }
-
-    /* ---- Cards ---- */
-    .card {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 28px 32px;
-        margin-bottom: 20px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-    }
-
-    /* ---- Section headers ---- */
-    .section-title {
-        font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #6e6e73;
-        margin-bottom: 6px;
-    }
-
-    /* ---- Big rank label ---- */
-    .rank-badge {
-        display: inline-block;
-        background: #1d1d1f;
-        color: #ffffff;
-        border-radius: 100px;
-        padding: 4px 16px;
-        font-size: 13px;
-        font-weight: 500;
-        letter-spacing: 0.03em;
-        margin-bottom: 12px;
-    }
-
-    .score-big {
-        font-size: 40px;
-        font-weight: 300;
-        color: #1d1d1f;
-        line-height: 1.1;
-    }
-
-    .score-label {
-        font-size: 13px;
-        color: #6e6e73;
-        margin-top: 2px;
-    }
-
-    /* ---- Tag pills ---- */
-    .tag-major {
-        display: inline-block;
-        background: #ffeaea;
-        color: #c0392b;
-        border-radius: 6px;
-        padding: 2px 10px;
-        font-size: 12px;
-        font-weight: 500;
-        margin-right: 4px;
-    }
-    .tag-minor {
-        display: inline-block;
-        background: #fff4e0;
-        color: #b76e00;
-        border-radius: 6px;
-        padding: 2px 10px;
-        font-size: 12px;
-        font-weight: 500;
-        margin-right: 4px;
-    }
-    .tag-sig {
-        display: inline-block;
-        background: #e8f0fe;
-        color: #1a56db;
-        border-radius: 6px;
-        padding: 2px 10px;
-        font-size: 12px;
-        font-weight: 500;
-        margin-right: 4px;
-    }
-    .tag-good {
-        display: inline-block;
-        background: #e6f9f0;
-        color: #1a7f4b;
-        border-radius: 6px;
-        padding: 2px 10px;
-        font-size: 12px;
-        font-weight: 500;
-        margin-right: 4px;
-    }
-
-    /* ---- Dividers ---- */
-    .thin-divider {
-        border: none;
-        border-top: 1px solid #e8e8ed;
-        margin: 18px 0;
-    }
-
-    /* ---- Interpretation block ---- */
-    .interp-block {
-        background: #f5f5f7;
-        border-left: 3px solid #1d1d1f;
-        border-radius: 0 8px 8px 0;
-        padding: 14px 18px;
-        margin-top: 10px;
-        font-size: 14px;
-        color: #1d1d1f;
-        line-height: 1.7;
-    }
-
-    /* ---- Fix item ---- */
-    .fix-item {
-        background: #f5f5f7;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin-bottom: 8px;
-        font-size: 14px;
-        color: #1d1d1f;
-        font-weight: 500;
-    }
-
-    /* ---- Sub-text ---- */
-    .sub-text {
-        font-size: 13px;
-        color: #6e6e73;
-        line-height: 1.6;
-    }
-
-    /* ---- Page title ---- */
-    .page-title {
-        font-size: 34px;
-        font-weight: 600;
-        color: #1d1d1f;
-        letter-spacing: -0.5px;
-    }
-    .page-subtitle {
-        font-size: 17px;
-        color: #6e6e73;
-        font-weight: 400;
-        margin-top: 4px;
-    }
-
-    /* ---- Streamlit tweaks ---- */
-    div[data-testid="stNumberInput"] label,
-    div[data-testid="stTextInput"] label,
-    div[data-testid="stSelectbox"] label {
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        color: #1d1d1f !important;
-    }
-
-    .stButton > button {
-        background: #1a7f4b;
-        color: #ffffff;
-        border: none;
-        border-radius: 980px;
-        padding: 10px 28px;
-        font-size: 14px;
-        font-weight: 500;
-        font-family: 'Inter', sans-serif;
-        cursor: pointer;
-        transition: background 0.15s;
-    }
-    .stButton > button:hover {
-        background: #166d3f;
-        color: #ffffff;
-    }
-
-    div[data-testid="stTabs"] button {
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        color: #6e6e73 !important;
-    }
-
-    div[data-testid="stTabs"] button[aria-selected="true"] {
-        color: #1d1d1f !important;
-        border-bottom: 2px solid #1d1d1f !important;
-    }
-
-    /* ---- Slider value labels ---- */
-    div[data-testid="stSlider"] [data-testid="stTickBarMin"],
-    div[data-testid="stSlider"] [data-testid="stTickBarMax"],
-    div[data-testid="stSlider"] p,
-    div[data-testid="stSlider"] span {
-        color: #1d1d1f !important;
-    }
-
-    /* Current selected value thumb label */
-    div[data-testid="stSlider"] div[data-testid="stThumbValue"] {
-        color: #1d1d1f !important;
-        background: #e8e8ed !important;
-        border-radius: 4px !important;
-        padding: 1px 6px !important;
-        font-weight: 600 !important;
-        font-size: 12px !important;
-    }
-
-    /* Slider track */
-    div[data-testid="stSlider"] > div > div > div {
-        background: #e8e8ed !important;
-    }
-    div[data-testid="stSlider"] > div > div > div > div {
-        background: #1d1d1f !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+# TEXTURE PARAMETER CONSTANTS
+# ─────────────────────────────────────────────
+ALL_PARAMS = ["Hardness", "Resilience", "Cohesiveness", "Springiness", "Chewiness", "MaxShear"]
 
 # ─────────────────────────────────────────────
-# CONSTANTS
+# COLOR PALETTE
 # ─────────────────────────────────────────────
-TPA_PARAMS   = ["Hardness", "Resilience", "Cohesiveness", "Springiness", "Chewiness"]
-ALL_PARAMS   = TPA_PARAMS + ["Max Shear Force (N)"]
-MAJOR_THRESH = 40   # % difference threshold for major
-MINOR_THRESH = 10   # % difference below which not shown
-SIG_ALPHA    = 0.05
-
-# Apple-inspired discrete color palette for samples
 PALETTE = [
-    "#0071e3",  # blue (control-ish)
-    "#ff6b35",  # orange
-    "#a2845e",  # warm brown
-    "#ffd60a",  # yellow
-    "#30d158",  # green
-    "#bf5af2",  # purple
-    "#ff375f",  # red
-    "#64d2ff",  # cyan
-    "#ff9f0a",  # amber
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ]
 
 # ─────────────────────────────────────────────
-# HELPER FUNCTIONS
+# STATISTICAL CONSTANTS
+# ─────────────────────────────────────────────
+SIG_ALPHA = 0.05  # Significance level for statistical tests
+
+# ─────────────────────────────────────────────
+# UTILITY FUNCTIONS
 # ─────────────────────────────────────────────
 
+def pct_diff(val1, val2):
+    """Calculate percentage difference: (val1 - val2) / val2 * 100"""
+    if val2 == 0 or val1 is None or val2 is None:
+        return None
+    return round((val1 - val2) / val2 * 100, 1)
+
+def interpret_sample(pct_diffs, sample_means, control_means, stat_tests=None):
+    """Generate interpretation text and recommendations based on % differences.
+    
+    stat_tests: dict with test results per parameter, e.g. {"MaxShear": {"p": 0.02, "significant": True, ...}}
+    """
+    major_issues = []
+    minor_issues = []
+    good_aspects = []
+    
+    # Hardness
+    h_pct = pct_diffs.get("Hardness")
+    if h_pct is not None:
+        if abs(h_pct) >= 40:
+            if h_pct > 0:
+                major_issues.append("Significantly harder than control")
+            else:
+                major_issues.append("Significantly softer than control")
+        elif abs(h_pct) >= 20:
+            if h_pct > 0:
+                minor_issues.append("Harder than control")
+            else:
+                minor_issues.append("Softer than control")
+        else:
+            good_aspects.append("Hardness similar to control")
+    
+    # Resilience
+    r_pct = pct_diffs.get("Resilience")
+    if r_pct is not None:
+        if abs(r_pct) >= 40:
+            if r_pct > 0:
+                major_issues.append("Much more elastic than control")
+            else:
+                major_issues.append("Much less elastic than control")
+        elif abs(r_pct) >= 20:
+            if r_pct > 0:
+                minor_issues.append("More elastic than control")
+            else:
+                minor_issues.append("Less elastic than control")
+        else:
+            good_aspects.append("Elasticity similar to control")
+    
+    # Cohesiveness
+    c_pct = pct_diffs.get("Cohesiveness")
+    if c_pct is not None:
+        if abs(c_pct) >= 40:
+            if c_pct > 0:
+                major_issues.append("Much more cohesive than control")
+            else:
+                major_issues.append("Much less cohesive than control")
+        elif abs(c_pct) >= 20:
+            if c_pct > 0:
+                minor_issues.append("More cohesive than control")
+            else:
+                minor_issues.append("Less cohesive than control")
+        else:
+            good_aspects.append("Cohesiveness similar to control")
+    
+    # Springiness
+    s_pct = pct_diffs.get("Springiness")
+    if s_pct is not None:
+        if abs(s_pct) >= 40:
+            if s_pct > 0:
+                major_issues.append("Much springier than control")
+            else:
+                major_issues.append("Much less springy than control")
+        elif abs(s_pct) >= 20:
+            if s_pct > 0:
+                minor_issues.append("Springier than control")
+            else:
+                minor_issues.append("Less springy than control")
+        else:
+            good_aspects.append("Springiness similar to control")
+    
+    # Chewiness
+    ch_pct = pct_diffs.get("Chewiness")
+    if ch_pct is not None:
+        if abs(ch_pct) >= 40:
+            if ch_pct > 0:
+                major_issues.append("Much chewier than control")
+            else:
+                major_issues.append("Much less chewy than control")
+        elif abs(ch_pct) >= 20:
+            if ch_pct > 0:
+                minor_issues.append("Chewier than control")
+            else:
+                minor_issues.append("Less chewy than control")
+        else:
+            good_aspects.append("Chewiness similar to control")
+    
+    # Max Shear - Critical for cake structure
+    ms_pct = pct_diffs.get("MaxShear")
+    if ms_pct is not None:
+        # Check if MaxShear difference is statistically significant
+        ms_is_sig = False
+        if stat_tests and "MaxShear" in stat_tests:
+            ms_is_sig = stat_tests["MaxShear"].get("significant", False)
+        
+        if ms_pct < 0:  # Lower MaxShear
+            # Only flag as CRUMBLY if statistically significant
+            if ms_is_sig:
+                if ms_pct <= -30:
+                    major_issues.append("Much lower Kramer shear than control - CRUMBLY, weak structure")
+                elif ms_pct <= -15:
+                    major_issues.append("Lower Kramer shear than control - CRUMBLY structure")
+                else:  # -15 to 0
+                    minor_issues.append("Lower Kramer shear than control - CRUMBLY tendencies")
+            else:
+                # Not statistically significant, so don't call it crumbly
+                if ms_pct <= -15:
+                    minor_issues.append("Lower Kramer shear than control (not significant)")
+                else:
+                    good_aspects.append("Kramer shear slightly lower but similar to control")
+        elif abs(ms_pct) >= 30:
+            major_issues.append("Much higher Kramer shear than control")
+        elif abs(ms_pct) >= 15:
+            minor_issues.append("Higher Kramer shear than control")
+        elif abs(ms_pct) >= 5:
+            minor_issues.append("Slightly higher Kramer shear than control")
+        else:
+            good_aspects.append("Kramer shear similar to control")
+    
+    # Generate summary
+    if major_issues:
+        summary = f"Major differences: {', '.join(major_issues[:2])}"
+        if len(major_issues) > 2:
+            summary += f" (+{len(major_issues)-2} more)"
+    elif minor_issues:
+        summary = f"Minor differences: {', '.join(minor_issues[:2])}"
+        if len(minor_issues) > 2:
+            summary += f" (+{len(minor_issues)-2} more)"
+    else:
+        summary = "Very similar to control"
+    
+    # Reasoning
+    reasoning = []
+    if major_issues:
+        reasoning.append("Major differences suggest significant formulation or processing changes.")
+        # Check if MaxShear is a major issue
+        if any("MaxShear" in issue.lower() or "kramer shear" in issue.lower() for issue in major_issues):
+            reasoning.append("MaxShear differences indicate potential issues with cake structure and crumb integrity.")
+    if minor_issues:
+        reasoning.append("Minor differences may be due to natural variation or slight adjustments.")
+        # Check if MaxShear is a minor issue
+        if any("MaxShear" in issue.lower() or "kramer shear" in issue.lower() for issue in minor_issues):
+            reasoning.append("MaxShear variations may affect cake texture and structural stability.")
+    if good_aspects:
+        reasoning.append("Similar aspects indicate consistency with control formulation.")
+    
+    # Fixes
+    fixes = []
+    if major_issues:
+        fixes.append("Review formulation ingredients and ratios.")
+        fixes.append("Check mixing and baking processes.")
+        # Specific fixes for MaxShear/structure issues
+        if any("MaxShear" in issue.lower() or "kramer shear" in issue.lower() or "structure" in issue.lower() for issue in major_issues):
+            fixes.append("Address structural issues: check flour quality, fat content, and baking temperature.")
+            fixes.append("Consider adding stabilizers or adjusting moisture content for better crumb structure.")
+    if minor_issues:
+        fixes.append("Monitor process consistency.")
+        fixes.append("Consider slight ingredient adjustments.")
+        # Specific fixes for MaxShear issues
+        if any("MaxShear" in issue.lower() or "kramer shear" in issue.lower() or "structure" in issue.lower() for issue in minor_issues):
+            fixes.append("Fine-tune formulation for improved structural integrity.")
+    if not major_issues and not minor_issues:
+        fixes.append("Current formulation is well-matched to control.")
+    
+    return summary, reasoning, fixes
+
 def z_score_standardize(means_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Z-score standardize column-wise across samples.
-    Purpose: remove unit/scale differences between parameters (e.g. Hardness in N vs
-    Springiness dimensionless ratio) so that all parameters contribute equally to
-    Euclidean distance and PCA. This is purely descriptive scaling — it is NOT used
-    for inference. The SD input does not affect this step.
-    """
+    """Z-score standardize each parameter (column) across samples."""
     scaler = StandardScaler()
     scaled = scaler.fit_transform(means_df)
     return pd.DataFrame(scaled, index=means_df.index, columns=means_df.columns)
 
+def compute_parameter_correlations(means_df: pd.DataFrame, min_r_squared: float = 0.25, sig_alpha: float = 0.05) -> dict:
+    """
+    Compute correlations between texture parameters across samples.
+    Returns only statistically significant correlations with high effect size.
+    
+    Args:
+        means_df: DataFrame with samples as rows, parameters as columns
+        min_r_squared: Minimum R² threshold to report (default 0.25 = 25% variance explained)
+        sig_alpha: Significance level (default 0.05)
+    
+    Returns:
+        dict with 'correlations' (list of significant pairs) and 'matrix' (full correlation matrix)
+    """
+    params = means_df.columns.tolist()
+    correlations = []
+    corr_matrix = pd.DataFrame(index=params, columns=params, dtype=float)
+    
+    for i, param1 in enumerate(params):
+        for j, param2 in enumerate(params):
+            if i >= j:  # Skip diagonal and duplicates
+                if i == j:
+                    corr_matrix.loc[param1, param2] = 1.0
+                continue
+            
+            # Calculate Pearson correlation
+            try:
+                x = means_df[param1].values
+                y = means_df[param2].values
+                
+                # Remove any NaN values
+                mask = ~(np.isnan(x) | np.isnan(y))
+                x_clean = x[mask]
+                y_clean = y[mask]
+                
+                if len(x_clean) < 3:  # Need at least 3 points
+                    continue
+                
+                r, p_val = stats.pearsonr(x_clean, y_clean)
+                r_squared = r ** 2
+                
+                # Store in matrix
+                corr_matrix.loc[param1, param2] = r
+                corr_matrix.loc[param2, param1] = r
+                
+                # Only report if significant AND meaningful effect size
+                if p_val < sig_alpha and r_squared >= min_r_squared:
+                    correlations.append({
+                        'param1': param1,
+                        'param2': param2,
+                        'r': round(r, 3),
+                        'r_squared': round(r_squared, 3),
+                        'p_value': round(p_val, 4),
+                        'direction': 'positive' if r > 0 else 'negative'
+                    })
+            except:
+                pass
+    
+    # Fill diagonal
+    for param in params:
+        corr_matrix.loc[param, param] = 1.0
+    
+    # Convert to float
+    corr_matrix = corr_matrix.astype(float)
+    
+    return {
+        'correlations': sorted(correlations, key=lambda x: abs(x['r']), reverse=True),
+        'matrix': corr_matrix
+    }
+
+def z_score_standardize(means_df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_euclidean_similarity(z_df: pd.DataFrame, control: str, n_params: int) -> tuple:
-    """
-    Euclidean distance from control in z-score space, converted to a 0-100 similarity score.
-
-    Anchoring strategy: the theoretical maximum distance in an n-dimensional z-score space
-    after standardisation is bounded. We use sqrt(n_params) * 3 as a generous anchor
-    (3 standard deviations per dimension) so the scale is ABSOLUTE and does not shift
-    when new samples are added. This prevents a sample's score from changing just because
-    a different, worse sample was included in the run.
-    """
-    ctrl_vec = z_df.loc[control].values
+    """Compute similarity scores and distances."""
+    control_vec = z_df.loc[control]
+    scores = {}
     distances = {}
     for sample in z_df.index:
-        distances[sample] = euclidean(z_df.loc[sample].values, ctrl_vec)
-
-    # Absolute anchor: a sample 3 SD away on every single parameter simultaneously
-    absolute_max = np.sqrt(n_params) * 3.0
-    scores = {s: max(0, round(100 * (1 - d / absolute_max))) for s, d in distances.items()}
+        if sample == control:
+            scores[sample] = 100.0
+            distances[sample] = 0.0
+        else:
+            dist = euclidean(control_vec, z_df.loc[sample])
+            # Convert distance to similarity score (0-100)
+            # Max possible distance for n_params dimensions is roughly sqrt(n_params * 4) for z-scores
+            max_dist = np.sqrt(n_params * 4)  # Conservative estimate
+            score = max(0, 100 * (1 - dist / max_dist))
+            scores[sample] = round(score, 1)
+            distances[sample] = round(dist, 3)
     return pd.Series(scores), pd.Series(distances)
 
-
-def welch_t_from_summary(mean1, sd1, n1, mean2, sd2, n2):
-    """
-    Welch's two-sample t-test computed analytically from summary statistics
-    (mean, SD, n) — no synthetic data points are generated.
-
-    This is statistically valid: the Welch t-statistic and Satterthwaite degrees
-    of freedom are derived directly from the sufficient statistics of a normal distribution.
-    """
-    if sd1 == 0 and sd2 == 0:
-        return None  # No variance at all — test is undefined
-    se1 = (sd1 ** 2) / n1 if n1 > 0 else 0
-    se2 = (sd2 ** 2) / n2 if n2 > 0 else 0
-    se_diff = np.sqrt(se1 + se2)
-    if se_diff == 0:
-        return None
-    t_stat = (mean1 - mean2) / se_diff
-    # Satterthwaite degrees of freedom
-    if se1 == 0 and se2 == 0:
-        return None
-    num   = (se1 + se2) ** 2
-    denom = (se1 ** 2 / max(n1 - 1, 1)) + (se2 ** 2 / max(n2 - 1, 1))
-    df    = num / denom if denom > 0 else 1.0
-    df    = max(df, 1.0)
-    p_val = 2 * stats.t.sf(abs(t_stat), df=df)
-    return float(p_val)
-
-
-def run_statistical_tests(raw_data: dict, summary_data: dict, control: str, samples: list, n_replicates: int) -> dict:
-    """
-    Two-sample Welch t-test for each sample vs control, per parameter.
-
-    Priority:
-      1. If actual replicate lists are provided (len >= 2), use scipy ttest_ind directly
-         — this is the most accurate path and should always be preferred.
-      2. If only summary stats (mean, SD, n) are available, use the analytical
-         Welch formula — this is statistically valid but carries a power warning
-         when n is small (< 3).
-      3. Never fabricate data points from mean ± SD (removed).
-
-    Returns dict: {sample: {param: {"p": float|None, "method": str, "n_ctrl": int, "n_samp": int}}}
-    """
+def run_statistical_tests(raw_data, summary_data, control, samples, n_replicates_default):
+    """Run one-way ANOVA for each parameter between control and each sample."""
     results = {}
-    ctrl_raw = raw_data.get(control, {})
-    ctrl_sum = summary_data.get(control, {})
-
     for samp in samples:
         if samp == control:
             continue
         samp_results = {}
-        samp_raw = raw_data.get(samp, {})
-        samp_sum = summary_data.get(samp, {})
+        all_params_sig = True  # Track if all parameters are significantly different
 
         for param in ALL_PARAMS:
-            ctrl_reps = ctrl_raw.get(param, [])
-            samp_reps = samp_raw.get(param, [])
+            # Try analytical ANOVA first (if summary stats available)
+            if samp in summary_data and control in summary_data:
+                ctrl_stats = summary_data[control].get(param, {})
+                samp_stats = summary_data[samp].get(param, {})
+                if ctrl_stats and samp_stats:
+                    m1, sd1, n1 = ctrl_stats['mean'], ctrl_stats['sd'], ctrl_stats['n']
+                    m2, sd2, n2 = samp_stats['mean'], samp_stats['sd'], samp_stats['n']
+                    if n1 >= 2 and n2 >= 2:
+                        # Use F-test approximation for ANOVA with 2 groups
+                        # F = t² for 2 groups
+                        t_stat, p_val = stats.ttest_ind_from_stats(m1, sd1, n1, m2, sd2, n2, equal_var=False)
+                        f_stat = t_stat ** 2
+                        # For ANOVA with 2 groups, df = n1 + n2 - 2
+                        df = n1 + n2 - 2
+                        p_val_anova = 1 - stats.f.cdf(f_stat, 1, df)
+                        samp_results[param] = {
+                            'p': round(p_val_anova, 4),
+                            'f_stat': round(f_stat, 4),
+                            'method': 'ANOVA (analytical)',
+                            'n_ctrl': n1,
+                            'n_samp': n2,
+                            'significant': p_val_anova < SIG_ALPHA
+                        }
+                        if p_val_anova >= SIG_ALPHA:
+                            all_params_sig = False
+                        continue
 
-            if len(ctrl_reps) >= 2 and len(samp_reps) >= 2:
-                # Path 1: real replicates — most accurate
-                _, p = stats.ttest_ind(ctrl_reps, samp_reps, equal_var=False)
-                method = "Welch t-test (replicates)"
-                n_c, n_s = len(ctrl_reps), len(samp_reps)
-            else:
-                # Path 2: analytical Welch from summary stats
-                c_m = ctrl_sum.get(param, {}).get("mean", None)
-                c_s = ctrl_sum.get(param, {}).get("sd",   None)
-                c_n = ctrl_sum.get(param, {}).get("n",    n_replicates)
-                s_m = samp_sum.get(param, {}).get("mean", None)
-                s_s = samp_sum.get(param, {}).get("sd",   None)
-                s_n = samp_sum.get(param, {}).get("n",    n_replicates)
+            # Fallback to replicate ANOVA
+            if samp in raw_data and control in raw_data:
+                ctrl_reps = raw_data[control].get(param, [])
+                samp_reps = raw_data[samp].get(param, [])
+                if len(ctrl_reps) >= 2 and len(samp_reps) >= 2:
+                    # One-way ANOVA with 2 groups
+                    all_data = ctrl_reps + samp_reps
+                    groups = ['control'] * len(ctrl_reps) + [samp] * len(samp_reps)
+                    f_stat, p_val = stats.f_oneway(ctrl_reps, samp_reps)
+                    samp_results[param] = {
+                        'p': round(p_val, 4),
+                        'f_stat': round(f_stat, 4),
+                        'method': 'ANOVA (replicates)',
+                        'n_ctrl': len(ctrl_reps),
+                        'n_samp': len(samp_reps),
+                        'significant': p_val < SIG_ALPHA
+                    }
+                    if p_val >= SIG_ALPHA:
+                        all_params_sig = False
+                    continue
 
-                if all(v is not None for v in [c_m, c_s, s_m, s_s]) and c_n >= 2 and s_n >= 2:
-                    p = welch_t_from_summary(c_m, c_s, c_n, s_m, s_s, s_n)
-                    method = "Welch t-test (summary stats)"
-                    n_c, n_s = c_n, s_n
-                else:
-                    p, method, n_c, n_s = None, "insufficient data", 0, 0
+            # No data available
+            samp_results[param] = {
+                'p': None,
+                'f_stat': None,
+                'method': 'insufficient data',
+                'n_ctrl': 0,
+                'n_samp': 0,
+                'significant': False
+            }
+            all_params_sig = False
 
-            samp_results[param] = {"p": p, "method": method, "n_ctrl": n_c, "n_samp": n_s}
+        # Add overall assessment for this sample
+        samp_results['_overall'] = {
+            'all_params_different': all_params_sig,
+            'significant_params': sum(1 for p in samp_results.values() if isinstance(p, dict) and p.get('significant', False))
+        }
+
         results[samp] = samp_results
     return results
-
-
-def pct_diff(val, ctrl_val):
-    if ctrl_val == 0:
-        return None
-    return (val - ctrl_val) / abs(ctrl_val) * 100
-
-
-# ─────────────────────────────────────────────
-# INTERPRETATION ENGINE
-# ─────────────────────────────────────────────
-
-TEXTURE_LOGIC = {
-    # (param, direction): (short label, reasoning)
-    ("Hardness", "low"):       ("Soft structure",          "Low hardness indicates a weak, soft crumb that compresses easily under load."),
-    ("Hardness", "high"):      ("Firm / dense structure",  "High hardness means greater resistance to compression — the cake is dense or over-structured."),
-    ("Chewiness", "low"):      ("Low chewing resistance",  "Low chewiness often co-occurs with low hardness and cohesiveness, suggesting a fragile, crumbly texture."),
-    ("Chewiness", "high"):     ("Chewy / tough texture",   "High chewiness indicates the cake requires significant masticatory work — may be perceived as tough."),
-    ("Cohesiveness", "low"):   ("Fragile crumb",           "Low cohesiveness means the internal structure bonds weakly — the crumb falls apart rather than deforming."),
-    ("Cohesiveness", "high"):  ("Cohesive crumb",          "High cohesiveness signals a well-bonded crumb structure with good integrity."),
-    ("Springiness", "low"):    ("Low elasticity",          "Low springiness means the sample does not recover well after compression — less bouncy, less fresh-like."),
-    ("Springiness", "high"):   ("High elasticity",         "High springiness suggests good crumb recovery — typical of a well-leavened, airy structure."),
-    ("Resilience", "low"):     ("Poor recovery",           "Low resilience indicates the crumb does not bounce back during the first bite — dense or stale feel."),
-    ("Resilience", "high"):    ("Good recovery",           "High resilience means the crumb springs back quickly — airy and fresh texture."),
-    ("Max Shear Force (N)", "low"):  ("Crumbly / fragile",       "Low shear force signals weak structural integrity — the cake cuts or breaks with minimal force, suggesting a crumbly or underbaked product."),
-    ("Max Shear Force (N)", "high"): ("Tough / resistant",       "High shear force means greater resistance to cutting — the sample may be over-structured, dense, or gummy."),
-}
-
-def interpret_sample(diffs_dict: dict, means: pd.Series, ctrl_means: pd.Series) -> tuple[str, str, list]:
-    """
-    Returns (summary_sentence, detailed_reasoning, list_of_fixes)
-    diffs_dict: {param: pct_diff_value}  — only significant ones passed
-    """
-    descriptors = []
-    reasoning_lines = []
-
-    for param, pct in diffs_dict.items():
-        direction = "low" if pct < 0 else "high"
-        key = (param, direction)
-        if key in TEXTURE_LOGIC:
-            lbl, reason = TEXTURE_LOGIC[key]
-            descriptors.append(lbl)
-            reasoning_lines.append(f"{param} is {abs(pct):.0f}% {'lower' if pct < 0 else 'higher'} than control: {reason}")
-
-    if not descriptors:
-        return "Very close to control.", "No major texture deviations detected.", []
-
-    # Deduplicate descriptors
-    seen = set()
-    unique_descriptors = []
-    for d in descriptors:
-        if d not in seen:
-            unique_descriptors.append(d)
-            seen.add(d)
-
-    summary = " | ".join(unique_descriptors[:3]) + "."
-
-    # Top 2-3 fixes
-    # Sort by magnitude of difference
-    sorted_diffs = sorted(diffs_dict.items(), key=lambda x: abs(x[1]), reverse=True)
-    fixes = []
-    for param, pct in sorted_diffs[:3]:
-        direction = "Increase" if pct < 0 else "Decrease"
-        magnitude = "significantly" if abs(pct) >= MAJOR_THRESH else "slightly"
-        fixes.append(f"{direction} {param.lower()} {magnitude}")
-
-    return summary, reasoning_lines, fixes
-
-
-# ─────────────────────────────────────────────
-# VISUALIZATION
-# ─────────────────────────────────────────────
 
 def plot_bar_chart(means_df: pd.DataFrame, sd_df: pd.DataFrame, sample_colors: dict) -> go.Figure:
     """Grouped bar chart — one group per parameter, bars colored by sample."""
@@ -478,84 +414,48 @@ def plot_bar_chart(means_df: pd.DataFrame, sd_df: pd.DataFrame, sample_colors: d
         title=dict(text="TPA & Kramer Shear — All Samples", font=dict(size=16, family="Inter", color="#1d1d1f"), x=0.0),
         plot_bgcolor="#ffffff",
         paper_bgcolor="#ffffff",
-        font=dict(family="Inter", color="#1d1d1f", size=13),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=1.02,
-            xanchor="right", x=1,
-            font=dict(size=12),
-        ),
-        xaxis=dict(
-            showgrid=False,
-            tickfont=dict(size=12, color="#1d1d1f"),
-            linecolor="#e0e0e0",
-        ),
-        yaxis=dict(
-            gridcolor="#f0f0f0",
-            tickfont=dict(size=12, color="#6e6e73"),
-            zeroline=False,
-        ),
-        margin=dict(l=40, r=20, t=60, b=40),
-        bargap=0.18,
-        bargroupgap=0.06,
-        height=420,
+        xaxis=dict(title="Texture Parameters", tickfont=dict(size=12)),
+        yaxis=dict(title="Mean Value", tickfont=dict(size=12)),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+        font=dict(family="Inter", color="#1d1d1f"),
+        height=500,
+        margin=dict(l=60, r=60, t=80, b=120),
     )
     return fig
-
 
 def plot_pca(z_df: pd.DataFrame, sample_colors: dict, control: str) -> go.Figure:
     """PCA scatter — samples projected onto PC1 & PC2."""
-    if z_df.shape[0] < 2:
-        return None
-
     pca = PCA(n_components=min(2, z_df.shape[1]))
     coords = pca.fit_transform(z_df.values)
     var_exp = pca.explained_variance_ratio_ * 100
-
+    
     fig = go.Figure()
-    for i, samp in enumerate(z_df.index):
-        is_ctrl = samp == control
+    for i, sample in enumerate(z_df.index):
+        color = sample_colors.get(sample, PALETTE[i % len(PALETTE)])
+        symbol = "diamond" if sample == control else "circle"
         fig.add_trace(go.Scatter(
             x=[coords[i, 0]],
-            y=[coords[i, 1] if coords.shape[1] > 1 else 0],
+            y=[coords[i, 1]],
             mode="markers+text",
-            name=samp,
-            text=[samp],
+            marker=dict(size=12, color=color, symbol=symbol, line=dict(width=2, color="#ffffff")),
+            text=[sample],
             textposition="top center",
-            textfont=dict(size=12, family="Inter"),
-            marker=dict(
-                size=14 if is_ctrl else 10,
-                color=sample_colors.get(samp, PALETTE[i % len(PALETTE)]),
-                symbol="diamond" if is_ctrl else "circle",
-                line=dict(width=2 if is_ctrl else 0, color="#1d1d1f"),
-            ),
+            textfont=dict(size=10, color="#1d1d1f"),
+            name=sample,
             showlegend=False,
         ))
-
-    xlab = f"PC1 ({var_exp[0]:.1f}% variance)" if len(var_exp) > 0 else "PC1"
-    ylab = f"PC2 ({var_exp[1]:.1f}% variance)" if len(var_exp) > 1 else "PC2"
-
+    
     fig.update_layout(
-        title=dict(text="PCA — Texture Space", font=dict(size=16, family="Inter", color="#1d1d1f"), x=0.0),
-        xaxis=dict(title=xlab, showgrid=True, gridcolor="#f0f0f0", zeroline=True, zerolinecolor="#e0e0e0", tickfont=dict(size=11)),
-        yaxis=dict(title=ylab, showgrid=True, gridcolor="#f0f0f0", zeroline=True, zerolinecolor="#e0e0e0", tickfont=dict(size=11)),
+        title=dict(text=f"PCA — Texture Space (PC1: {var_exp[0]:.1f}%, PC2: {var_exp[1] if len(var_exp) > 1 else 0:.1f}%)", font=dict(size=16, family="Inter", color="#1d1d1f"), x=0.0),
         plot_bgcolor="#ffffff",
         paper_bgcolor="#ffffff",
+        xaxis=dict(title="PC1", zeroline=True, zerolinewidth=1, zerolinecolor="#e0e0e0"),
+        yaxis=dict(title="PC2", zeroline=True, zerolinewidth=1, zerolinecolor="#e0e0e0"),
         font=dict(family="Inter", color="#1d1d1f"),
-        height=420,
-        margin=dict(l=40, r=20, t=60, b=40),
+        height=500,
+        margin=dict(l=60, r=60, t=80, b=60),
     )
     return fig
-
-
-def hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
-    """Convert a hex color string to an rgba() string with the given alpha."""
-    hex_color = hex_color.lstrip("#")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
-
 
 def plot_radar(means_df: pd.DataFrame, z_df: pd.DataFrame, sample_colors: dict, control: str) -> go.Figure:
     """Radar / spider chart in z-score space."""
@@ -591,68 +491,87 @@ def plot_radar(means_df: pd.DataFrame, z_df: pd.DataFrame, sample_colors: dict, 
     )
     return fig
 
+def hex_to_rgba(hex_color, alpha=1.0):
+    """Convert hex color to rgba tuple."""
+    hex_color = hex_color.lstrip('#')
+    rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha})'
 
 # ─────────────────────────────────────────────
-# IMAGE ANALYSIS (vision-free, rule-based)
+# IMAGE ANALYSIS FUNCTIONS
 # ─────────────────────────────────────────────
 
-def analyze_crumb_image(img: Image.Image) -> dict:
-    """
-    Lightweight rule-based crumb image analysis using brightness, contrast, and edge density.
-    Returns a dict with observations and inferences.
-    """
-    import numpy as np
-
-    img_gray = img.convert("L")
-    arr = np.array(img_gray, dtype=float)
-
-    brightness  = arr.mean()          # 0-255
-    contrast    = arr.std()           # spread
-    # Simple edge proxy: variance of Laplacian-like gradient
-    from numpy import gradient
-    gx = np.abs(np.diff(arr, axis=1)).mean()
-    gy = np.abs(np.diff(arr, axis=0)).mean()
-    edge_density = (gx + gy) / 2.0
-
-    # Classify
-    if brightness < 90:
-        crust_note = "Dark crumb — could indicate caramelisation, cocoa, or over-baking."
-        bake_note  = "Potential over-bake or high-sugar formulation."
-    elif brightness > 190:
+def analyze_cake_image(image):
+    """Analyze cake crumb image for texture parameters."""
+    # Convert to grayscale
+    gray = image.convert('L')
+    img_array = np.array(gray)
+    
+    # Brightness (mean intensity)
+    brightness = np.mean(img_array)
+    
+    # Contrast (std of intensity)
+    contrast = np.std(img_array)
+    
+    # Edge density (using Sobel)
+    from scipy import ndimage
+    sobel_x = ndimage.sobel(img_array, axis=0)
+    sobel_y = ndimage.sobel(img_array, axis=1)
+    edge_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+    edge_density = np.mean(edge_magnitude) / 255 * 100  # Normalize to 0-100
+    
+    # Pore structure (contrast in local regions)
+    # Simple approximation: high contrast indicates visible pores
+    pore_contrast = contrast
+    
+    # Aeration (inverse of density)
+    # Simple: higher brightness = more air pockets
+    aeration = brightness / 255 * 100
+    
+    # Cell structure (edge density as proxy)
+    cell_structure = edge_density
+    
+    # Interpretations
+    if brightness > 200:
         crust_note = "Very light crumb — may suggest under-baking or a pale, low-sugar batter."
-        bake_note  = "Check bake time and temperature."
+        bake_note = "Check bake time and temperature."
+    elif brightness > 170:
+        crust_note = "Light crumb color — potentially over-baked or high-sugar formulation."
+        bake_note = "Potential over-bake or high-sugar formulation."
+    elif brightness < 120:
+        crust_note = "Dark crumb — may indicate over-baking or high Maillard reaction."
+        bake_note = "Reduce bake time or temperature."
     else:
         crust_note = "Crumb color appears normal — mid-range browning."
-        bake_note  = "Bake level appears standard."
-
+        bake_note = "Bake level appears standard."
+    
     if contrast > 55:
-        pore_note  = "High contrast indicates visible, non-uniform pores — open, irregular crumb structure."
-        airy_note  = "Structure appears porous / airy."
+        pore_note = "High contrast indicates visible, non-uniform pores — open, irregular crumb structure."
+        airy_note = "Structure appears porous / airy."
     elif contrast < 25:
-        pore_note  = "Low contrast indicates a dense, tight crumb with minimal visible pores."
-        airy_note  = "Structure appears dense / compact."
+        pore_note = "Low contrast indicates a dense, tight crumb with minimal visible pores."
+        airy_note = "Structure appears dense / compact."
     else:
-        pore_note  = "Moderate contrast — medium crumb porosity."
-        airy_note  = "Structure appears intermediate."
-
+        pore_note = "Moderate contrast — medium crumb porosity."
+        airy_note = "Structure appears intermediate."
+    
     if edge_density > 15:
         texture_note = "High edge density — many crumb cell walls visible, suggesting a fine, tight cell structure."
     elif edge_density < 6:
         texture_note = "Low edge density — large or ill-defined crumb cells, consistent with a coarse or open structure."
     else:
         texture_note = "Moderate edge density — balanced crumb cell definition."
-
+    
     return {
-        "Brightness":   round(brightness, 1),
-        "Contrast":     round(contrast, 1),
+        "Brightness": round(brightness, 1),
+        "Contrast": round(contrast, 1),
         "Edge Density": round(edge_density, 2),
-        "Crumb Color":  crust_note,
-        "Bake Level":   bake_note,
+        "Crumb Color": crust_note,
+        "Bake Level": bake_note,
         "Pore Structure": pore_note,
-        "Aeration":     airy_note,
+        "Aeration": airy_note,
         "Cell Structure": texture_note,
     }
-
 
 # ─────────────────────────────────────────────
 # SIDEBAR — SAMPLE SETUP
@@ -691,7 +610,6 @@ with st.sidebar:
         "<p class='sub-text' style='margin-top:6px;'>Replicate counts can differ between samples — each sample's n is determined from its data. Max Shear Force can have a different n from TPA parameters within the same sample.</p>",
         unsafe_allow_html=True,
     )
-
 
 # ─────────────────────────────────────────────
 # MAIN HEADER
@@ -733,7 +651,7 @@ with tab_input:
     template_rows = []
     for sname in sample_names:
         template_rows.append({c: (sname if c == "Sample" else "") for c in template_cols})
-    template_df  = pd.DataFrame(template_rows)
+    template_df = pd.DataFrame(template_rows)
     template_csv = template_df.to_csv(index=False)
     st.download_button(
         label="Download blank template",
@@ -755,24 +673,24 @@ with tab_input:
 
             # Validate required columns
             required = {"Sample", "Hardness", "Resilience", "Cohesiveness", "Springiness", "Chewiness"}
-            missing  = required - set(csv_df.columns)
+            missing = required - set(csv_df.columns)
             if missing:
                 st.error(f"Missing required columns: {', '.join(sorted(missing))}")
             else:
                 # Show preview
                 st.markdown("<p class='section-title' style='margin-top:16px;'>Preview</p>", unsafe_allow_html=True)
-                st.dataframe(csv_df, use_container_width=True)
+                st.dataframe(csv_df, width='stretch')
 
                 col_map = {
-                    "Hardness":            "Hardness",
-                    "Resilience":          "Resilience",
-                    "Cohesiveness":        "Cohesiveness",
-                    "Springiness":         "Springiness",
-                    "Chewiness":           "Chewiness",
+                    "Hardness": "Hardness",
+                    "Resilience": "Resilience",
+                    "Cohesiveness": "Cohesiveness",
+                    "Springiness": "Springiness",
+                    "Chewiness": "Chewiness",
                     "Max Shear Force (N)": "MaxShear",
                 }
 
-                csv_input      = {}
+                csv_input = {}
                 sample_n_table = {}  # for display
 
                 for sname, grp in csv_df.groupby("Sample", sort=False):
@@ -788,7 +706,7 @@ with tab_input:
                             # MaxShear column absent — mark as missing, not error
                             pdata[param] = {"reps": []}
                             n_info[param] = 0
-                    csv_input[sname]      = pdata
+                    csv_input[sname] = pdata
                     sample_n_table[sname] = n_info
 
                 input_data = csv_input
@@ -798,7 +716,7 @@ with tab_input:
                 st.markdown("<p class='section-title' style='margin-top:16px;'>Replicate counts detected</p>", unsafe_allow_html=True)
                 n_display = pd.DataFrame(sample_n_table).T
                 n_display.index.name = "Sample"
-                st.dataframe(n_display, use_container_width=True)
+                st.dataframe(n_display, width='stretch')
 
                 detected_samples = list(csv_input.keys())
                 st.markdown(
@@ -822,8 +740,20 @@ with tab_input:
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    run_analysis = st.button("Run Analysis", disabled=not csv_loaded)
-
+    
+    # Run Analysis Button
+    analysis_done = "analysis_done" in st.session_state
+    if analysis_done:
+        st.markdown("""
+        <div style="text-align: center; margin: 20px 0;">
+            <button style="background-color: #30d158; color: white; border: none; border-radius: 8px; padding: 12px 24px; font-size: 16px; font-weight: 500; cursor: default;" disabled>
+                ✅ Analysis Complete
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
+        run_analysis = False
+    else:
+        run_analysis = st.button("Run Analysis", disabled=not csv_loaded)
 
 # ─────────────────────────────────────────────
 # ANALYSIS ENGINE (runs on button click or if session state present)
@@ -836,7 +766,9 @@ def build_means_sd_df(input_data, sample_names):
     - For summary mode: values are taken as entered; n is also stored but not used here.
     Mean and SD are NEVER manually typed when replicates are available.
     """
-    means_rows, sd_rows = {}, {}
+    means_rows = {}
+    sd_rows = {}
+
     for samp in sample_names:
         if samp not in input_data:
             continue
@@ -849,28 +781,27 @@ def build_means_sd_df(input_data, sample_names):
                 s_row[param] = float(np.std(reps, ddof=1)) if len(reps) > 1 else 0.0
             else:
                 m_row[param] = float(pd_.get("mean", 1.0))
-                s_row[param] = float(pd_.get("sd",   0.0))
+                s_row[param] = float(pd_.get("sd", 0.0))
         means_rows[samp] = m_row
-        sd_rows[samp]    = s_row
+        sd_rows[samp] = s_row
     return pd.DataFrame(means_rows).T, pd.DataFrame(sd_rows).T
-
 
 def build_raw_and_summary(input_data, sample_names, n_replicates_default):
     """
     Separate raw replicate lists (for direct t-tests) from summary dicts (for analytical t-tests).
     Never fabricates data points from mean ± SD.
     Returns:
-        raw_data:     {sample: {param: [rep1, rep2, ...]}}   — only populated when replicates are available
-        summary_data: {sample: {param: {mean, sd, n}}}       — always populated (computed from reps if available)
+        raw_data: {sample: {param: [rep1, rep2, ...]}} — only populated when replicates are available
+        summary_data: {sample: {param: {mean, sd, n}}} — always populated (computed from reps if available)
     """
-    raw_data     = {}
+    raw_data = {}
     summary_data = {}
 
     for samp in sample_names:
         if samp not in input_data:
             continue
-        raw_params  = {}
-        sum_params  = {}
+        raw_params = {}
+        sum_params = {}
         for param in ALL_PARAMS:
             pd_ = input_data[samp].get(param, {})
             if "reps" in pd_:
@@ -880,40 +811,48 @@ def build_raw_and_summary(input_data, sample_names, n_replicates_default):
                 s = float(np.std(reps, ddof=1)) if len(reps) > 1 else 0.0
                 sum_params[param] = {"mean": m, "sd": s, "n": len(reps)}
             else:
-                # Summary mode — no raw data available
+                # Summary mode — no data available
                 m = float(pd_.get("mean", 1.0))
-                s = float(pd_.get("sd",   0.0))
-                n = int(pd_.get("n",      n_replicates_default))
+                s = float(pd_.get("sd", 0.0))
+                n = int(pd_.get("n", n_replicates_default))
                 raw_params[param] = []  # empty — signals "no raw replicates"
                 sum_params[param] = {"mean": m, "sd": s, "n": n}
-        raw_data[samp]     = raw_params
+        raw_data[samp] = raw_params
         summary_data[samp] = sum_params
 
     return raw_data, summary_data
 
-
 if run_analysis or "analysis_done" in st.session_state:
     if run_analysis:
         st.session_state["analysis_done"] = True
-        st.session_state["input_data"]    = input_data
-        st.session_state["sample_names"]  = sample_names
-        st.session_state["control"]       = control_sample
-        st.session_state["major_thresh"]  = major_thresh
-        st.session_state["minor_thresh"]  = show_minor_thresh
+        st.session_state["input_data"] = input_data
+        st.session_state["sample_names"] = sample_names
+        st.session_state["control"] = control_sample
+        st.session_state["major_thresh"] = major_thresh
+        st.session_state["minor_thresh"] = show_minor_thresh
 
     # Retrieve from session
-    _input   = st.session_state.get("input_data", input_data)
+    _input = st.session_state.get("input_data", input_data)
     _samples = st.session_state.get("sample_names", sample_names)
     _control = st.session_state.get("control", control_sample)
-    _major   = st.session_state.get("major_thresh", major_thresh)
-    _minor   = st.session_state.get("minor_thresh", show_minor_thresh)
+    _major = st.session_state.get("major_thresh", major_thresh)
+    _minor = st.session_state.get("minor_thresh", show_minor_thresh)
 
     means_df, sd_df = build_means_sd_df(_input, _samples)
     raw_data, summary_data = build_raw_and_summary(_input, _samples, int(n_replicates))
 
+    missing_samples = [s for s in _samples if s not in means_df.index]
+    if missing_samples:
+        st.warning(
+            f"These sample names were not found in uploaded data and will be ignored: {', '.join(missing_samples)}. "
+            "Please ensure the Sample column matches the configured sample names."
+        )
+
     if _control not in means_df.index:
         st.error(f"Control sample '{_control}' not found in data. Please check sample names.")
         st.stop()
+
+    _samples = [s for s in _samples if s in means_df.index]
 
     z_df = z_score_standardize(means_df)
     scores_series, distances_series = compute_euclidean_similarity(z_df, _control, len(ALL_PARAMS))
@@ -928,7 +867,7 @@ if run_analysis or "analysis_done" in st.session_state:
 
     # Sort non-control samples by score descending
     non_ctrl = [s for s in _samples if s != _control]
-    ranked   = sorted(non_ctrl, key=lambda s: scores_series.get(s, 0), reverse=True)
+    ranked = sorted(non_ctrl, key=lambda s: scores_series.get(s, 0), reverse=True)
 
     # ─────────────────────────────────────────────
     # TAB 2 — RESULTS & INSIGHTS
@@ -956,12 +895,14 @@ if run_analysis or "analysis_done" in st.session_state:
 
         ctrl_row = {"Rank": "—", "Sample": f"{_control} (Control)", "Similarity Score": "100 / 100", "Distance": 0.0, "Assessment": "Reference"}
         summary_df = pd.DataFrame([ctrl_row] + summary_rows)
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        st.dataframe(summary_df, width='stretch', hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
         # ── PER-SAMPLE CARDS ──
         for rank_i, samp in enumerate(ranked, 1):
-            sc   = scores_series.get(samp, 0)
+            if samp not in means_df.index:
+                continue  # Skip samples not in data
+            sc = scores_series.get(samp, 0)
             dist = distances_series.get(samp, 0)
 
             # % diffs
@@ -973,26 +914,35 @@ if run_analysis or "analysis_done" in st.session_state:
                 if p is not None:
                     all_pct[param] = p
 
-            # Filtered diffs (above minor threshold)
-            shown_pct = {k: v for k, v in all_pct.items() if abs(v) >= _minor}
+            # Filtered diffs (above minor threshold), but always include MaxShear even if small change
+            # MaxShear is critical for cake structure, so show all changes (including 0%)
+            shown_pct = {
+                k: v for k, v in all_pct.items()
+                if abs(v) >= _minor or k == "MaxShear"
+            }
 
             # Significant params
             sig_params = []
             low_power_warning = False
             if samp in stat_results:
                 for param, test in stat_results[samp].items():
-                    pval   = test.get("p")
+                    pval = test.get("p")
                     method = test.get("method", "")
-                    n_c    = test.get("n_ctrl", 0)
-                    n_s    = test.get("n_samp", 0)
+                    n_c = test.get("n_ctrl", 0)
+                    n_s = test.get("n_samp", 0)
                     if pval is not None and pval < SIG_ALPHA:
                         sig_params.append((param, pval, method, n_c, n_s))
                     if n_c < 3 or n_s < 3:
                         low_power_warning = True
 
             # Interpretation
-            interp_pct = {k: v for k, v in all_pct.items() if abs(v) >= _minor}
-            summary_text, reasoning_lines, fixes = interpret_sample(interp_pct, means_df.loc[samp], means_df.loc[_control])
+            interp_pct = {
+                k: v for k, v in all_pct.items()
+                if abs(v) >= _minor or k == "MaxShear"
+            }
+            # Pass statistical test results for MaxShear significance check
+            sample_stat_tests = stat_results.get(samp, {}) if samp in stat_results else {}
+            summary_text, reasoning_lines, fixes = interpret_sample(interp_pct, means_df.loc[samp], means_df.loc[_control], sample_stat_tests)
 
             # Score color
             if sc >= 75:
@@ -1015,78 +965,79 @@ if run_analysis or "analysis_done" in st.session_state:
 
             st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
 
+            # MaxShear specific analysis - critical for cake structure
+            if "MaxShear" in means_df.columns and samp in means_df.index and _control in means_df.index:
+                ms_samp = means_df.loc[samp, "MaxShear"]
+                ms_ctrl = means_df.loc[_control, "MaxShear"]
+                ms_pct = pct_diff(ms_samp, ms_ctrl)
+
+                ms_sig = False
+                ms_p_val = None
+                if samp in stat_results and "MaxShear" in stat_results[samp]:
+                    ms_stat = stat_results[samp]["MaxShear"]
+                    ms_sig = ms_stat.get('significant', False)
+                    ms_p_val = ms_stat.get('p')
+
+                st.markdown("**Cake Structure Analysis (MaxShear):**")
+                structure_status = ""
+                if ms_pct is not None:
+                    if ms_pct < 0:
+                        # Only flag as CRUMBLY if statistically significant
+                        if ms_sig:
+                            structure_status = f"⚠️ **Lower MaxShear ({ms_pct:.1f}%) - CRUMBLY structure**"
+                        else:
+                            structure_status = f"✅ **Lower MaxShear ({ms_pct:.1f}%) - Not significantly different**"
+                    elif ms_pct >= 15:
+                        structure_status = f"✅ **Higher MaxShear ({ms_pct:.1f}%) - Stronger structure than control**"
+                    else:
+                        structure_status = f"✅ **MaxShear similar to control ({ms_pct:.1f}%)**"
+
+                if ms_p_val is not None:
+                    structure_status += f" | p-value: {ms_p_val:.3f}"
+                    if ms_sig:
+                        structure_status += " (significant)"
+                    else:
+                        structure_status += " (not significant)"
+
+                st.markdown(structure_status)
+
+            st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
+
             r_col1, r_col2, r_col3 = st.columns(3)
 
             # Column 1: Key differences
             with r_col1:
-                st.markdown("<p class='section-title'>Key Differences vs Control</p>", unsafe_allow_html=True)
+                st.markdown("<p class='section-title'>Key Differences</p>", unsafe_allow_html=True)
                 if shown_pct:
-                    for param, pct in sorted(shown_pct.items(), key=lambda x: abs(x[1]), reverse=True):
-                        arrow  = "down" if pct < 0 else "up"
-                        symbol = "-" if pct < 0 else "+"
+                    for param, pct in shown_pct.items():
                         tag_class = "tag-major" if abs(pct) >= _major else "tag-minor"
-                        tag_label = "major" if abs(pct) >= _major else "minor"
-                        st.markdown(
-                            f"<div style='display:flex;align-items:center;margin-bottom:8px;'>"
-                            f"<span style='font-size:14px;color:#1d1d1f;font-weight:500;flex:1;'>{param}</span>"
-                            f"<span style='font-size:13px;color:{'#c0392b' if pct < 0 else '#1a7f4b'};font-weight:600;margin-right:8px;'>{symbol}{abs(pct):.0f}%</span>"
-                            f"<span class='{tag_class}'>{tag_label}</span>"
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
+                        st.markdown(f"<div class='{tag_class}'>{param}: {pct:+.1f}%</div>", unsafe_allow_html=True)
                 else:
-                    st.markdown("<p class='sub-text'>No differences above the display threshold.</p>", unsafe_allow_html=True)
+                    st.markdown("<div class='sub-text'>All parameters within ±10% of control</div>", unsafe_allow_html=True)
 
             # Column 2: Statistical significance
             with r_col2:
-                st.markdown("<p class='section-title'>Statistical Tests</p>", unsafe_allow_html=True)
+                st.markdown("<p class='section-title'>Statistical Significance</p>", unsafe_allow_html=True)
                 if sig_params:
-                    for param, pval, method, n_c, n_s in sorted(sig_params, key=lambda x: x[1]):
-                        # Format p-value: use scientific notation below 0.001 so it never displays as 0.0000
-                        if pval < 0.001:
-                            p_display = f"{pval:.2e}"
-                        else:
-                            p_display = f"{pval:.4f}"
-                        st.markdown(
-                            f"<div style='display:flex;align-items:center;margin-bottom:8px;'>"
-                            f"<span style='font-size:14px;color:#1d1d1f;font-weight:500;flex:1;'>{param}</span>"
-                            f"<span class='tag-sig'>p = {p_display}</span>"
-                            f"</div>"
-                            f"<p style='font-size:11px;color:#aeaeb2;margin-top:-6px;margin-bottom:8px;'>"
-                            f"{method} &nbsp;|&nbsp; ctrl n={n_c}, sample n={n_s}</p>",
-                            unsafe_allow_html=True,
-                        )
+                    for param, pval, method, n_c, n_s in sig_params[:3]:  # Limit to 3
+                        st.markdown(f"<div class='tag-sig'>{param}: p={pval:.3f} ({method})</div>", unsafe_allow_html=True)
+                    if len(sig_params) > 3:
+                        st.markdown(f"<div class='sub-text'>+{len(sig_params)-3} more significant differences</div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(
-                        "<p class='sub-text'>No parameters significant at p &lt; 0.05.</p>",
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown("<div class='sub-text'>No statistically significant differences detected</div>", unsafe_allow_html=True)
                 if low_power_warning:
-                    st.markdown(
-                        "<div style='background:#fff8e7;border-left:3px solid #ff9f0a;border-radius:0 6px 6px 0;"
-                        "padding:8px 12px;margin-top:8px;font-size:12px;color:#b76e00;'>"
-                        "Low power warning: n &lt; 3 in at least one group. "
-                        "With few replicates, the test may miss real differences. "
-                        "Interpret p-values with caution and increase replicates where possible."
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown("<div class='sub-text' style='color:#ff9f0a;margin-top:8px;'>⚠️ Low statistical power (n<3)</div>", unsafe_allow_html=True)
 
-            # Column 3: Top fixes
+            # Column 3: Interpretation & fixes
             with r_col3:
-                st.markdown("<p class='section-title'>Recommended Fixes</p>", unsafe_allow_html=True)
-                if fixes:
-                    for fix in fixes[:3]:
-                        st.markdown(f"<div class='fix-item'>{fix}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown("<p class='sub-text'>No significant changes recommended.</p>", unsafe_allow_html=True)
-
-            # Interpretation block
-            if reasoning_lines:
-                st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
                 st.markdown("<p class='section-title'>Interpretation</p>", unsafe_allow_html=True)
-                content = "<br>".join([f"&bull; {line}" for line in reasoning_lines])
-                st.markdown(f"<div class='interp-block'>{content}</div>", unsafe_allow_html=True)
+                if reasoning_lines:
+                    for line in reasoning_lines[:2]:
+                        st.markdown(f"<div class='interp-block'>{line}</div>", unsafe_allow_html=True)
+                if fixes:
+                    st.markdown("<p class='section-title' style='margin-top:16px;'>Recommendations</p>", unsafe_allow_html=True)
+                    for fix in fixes[:2]:
+                        st.markdown(f"<div class='fix-item'>{fix}</div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1094,11 +1045,13 @@ if run_analysis or "analysis_done" in st.session_state:
         with st.expander("Raw Data — Means & Standard Deviations"):
             combined = pd.DataFrame()
             for samp in _samples:
+                if samp not in means_df.index:
+                    continue
                 row_m = means_df.loc[samp].rename(lambda c: f"{c} (mean)")
                 row_s = sd_df.loc[samp].rename(lambda c: f"{c} (SD)")
                 row = pd.concat([row_m, row_s]).to_frame(name=samp).T
                 combined = pd.concat([combined, row])
-            st.dataframe(combined.round(4), use_container_width=True)
+            st.dataframe(combined.round(4), width='stretch')
 
     # ─────────────────────────────────────────────
     # TAB 3 — VISUALIZATIONS
@@ -1109,7 +1062,76 @@ if run_analysis or "analysis_done" in st.session_state:
         st.markdown("<p class='section-title'>Grouped Bar Chart</p>", unsafe_allow_html=True)
         st.markdown("<p class='sub-text'>Mean values with standard deviation error bars. All parameters on a common axis for direct visual comparison.</p>", unsafe_allow_html=True)
         fig_bar = plot_bar_chart(means_df, sd_df, sample_colors)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width='stretch')
+        st.markdown("**Key Insights:**")
+        # Generate sample-specific insights
+        insights = []
+        for samp in _samples:
+            if samp == _control:
+                insights.append(f"- **{_control}** (control): Reference sample with baseline texture properties")
+            else:
+                # Compare to control
+                higher_params = []
+                lower_params = []
+                maxshear_diff = None
+                for param in ALL_PARAMS:
+                    if samp in means_df.index and _control in means_df.index:
+                        samp_val = means_df.loc[samp, param]
+                        ctrl_val = means_df.loc[_control, param]
+                        pct_diff_val = pct_diff(samp_val, ctrl_val)
+                        if pct_diff_val is not None:
+                            # Always include MaxShear since it's critical for structure; use 10% threshold for other params
+                            threshold = 0 if param == "MaxShear" else 10
+                            if abs(pct_diff_val) >= threshold or (param == "MaxShear" and pct_diff_val != 0):
+                                if pct_diff_val > 0:
+                                    higher_params.append(f"{param.lower()} (+{pct_diff_val:.0f}%)")
+                                else:
+                                    lower_params.append(f"{param.lower()} ({pct_diff_val:.0f}%)")
+                            if param == "MaxShear":
+                                maxshear_diff = pct_diff_val
+
+                insight = f"- **{samp}**: "
+                if higher_params and lower_params:
+                    insight += f"Higher in {', '.join(higher_params[:2])}; lower in {', '.join(lower_params[:2])}"
+                elif higher_params:
+                    insight += f"Higher in {', '.join(higher_params[:3])}"
+                elif lower_params:
+                    insight += f"Lower in {', '.join(lower_params[:3])}"
+                else:
+                    insight += "Similar texture profile to control"
+
+                # Special emphasis on MaxShear for cake structure - report if significantly lower OR meaningfully lower
+                if maxshear_diff is not None and maxshear_diff < 0:  # Only if lower
+                    if samp in stat_results and "MaxShear" in stat_results[samp]:
+                        ms_test = stat_results[samp]["MaxShear"]
+                        ms_sig_insight = ms_test.get("significant", False)
+                        if ms_sig_insight:
+                            insight += f" - **CRUMBLY: Significantly lower MaxShear ({maxshear_diff:.0f}%) deteriorates structural integrity**"
+                        elif abs(maxshear_diff) >= 10:  # Only report lower if meaningful
+                            insight += f" - **Lower MaxShear ({maxshear_diff:.0f}%) - may affect structure**"
+                    elif abs(maxshear_diff) >= 10:
+                        insight += f" - **Lower MaxShear ({maxshear_diff:.0f}%) - may affect structure**"
+                elif maxshear_diff is not None and maxshear_diff > 0 and abs(maxshear_diff) >= 5:
+                    insight += f" - **Higher MaxShear ({maxshear_diff:.0f}%) suggests stronger structure**"
+
+                # Add statistical significance if available
+                if samp in stat_results and '_overall' in stat_results[samp]:
+                    overall = stat_results[samp]['_overall']
+                    if overall['all_params_different']:
+                        insight += " - all parameters significantly different"
+                    elif overall['significant_params'] > 0:
+                        insight += f" - {overall['significant_params']} parameters significantly different"
+
+                    # Specifically check MaxShear significance
+                    if "MaxShear" in stat_results[samp] and stat_results[samp]["MaxShear"].get('significant', False):
+                        ms_p = stat_results[samp]["MaxShear"].get('p')
+                        if ms_p is not None:
+                            insight += f" - MaxShear p={ms_p:.3f}"
+
+                insights.append(insight)
+
+        for insight in insights:
+            st.markdown(insight)
         st.markdown("</div>", unsafe_allow_html=True)
 
         col_v1, col_v2 = st.columns(2)
@@ -1121,7 +1143,51 @@ if run_analysis or "analysis_done" in st.session_state:
             if len(_samples) >= 2:
                 fig_pca = plot_pca(z_df, sample_colors, _control)
                 if fig_pca:
-                    st.plotly_chart(fig_pca, use_container_width=True)
+                    st.plotly_chart(fig_pca, width='stretch')
+                    st.markdown("**Key Insights:**")
+                    # PCA sample insights
+                    pca_insights = []
+
+                    # Find most similar and different samples to control
+                    if _control in z_df.index:
+                        ctrl_pca = z_df.loc[_control, ['PC1', 'PC2']].values
+                        distances = {}
+                        for samp in _samples:
+                            if samp != _control and samp in z_df.index:
+                                samp_pca = z_df.loc[samp, ['PC1', 'PC2']].values
+                                distances[samp] = np.linalg.norm(ctrl_pca - samp_pca)
+
+                        if distances:
+                            most_similar = min(distances, key=distances.get)
+                            most_different = max(distances, key=distances.get)
+                            pca_insights.append(f"- **{most_similar}** is closest to {_control}, so its overall texture profile is most comparable to the control.")
+                            if most_different != most_similar:
+                                pca_insights.append(f"- **{most_different}** is furthest from {_control}, indicating the most distinct texture profile among the samples.")
+
+                    # Identify sample groupings that share texture behavior
+                    if len(_samples) > 3:
+                        from sklearn.cluster import KMeans
+                        try:
+                            pca_coords = z_df.loc[_samples, ['PC1', 'PC2']].values
+                            kmeans = KMeans(n_clusters=min(3, len(_samples)), random_state=42, n_init=10)
+                            clusters = kmeans.fit_predict(pca_coords)
+
+                            cluster_groups = {}
+                            for i, samp in enumerate(_samples):
+                                cluster_id = clusters[i]
+                                cluster_groups.setdefault(cluster_id, []).append(samp)
+
+                            for cluster_id, samples_in_cluster in cluster_groups.items():
+                                if len(samples_in_cluster) > 1:
+                                    pca_insights.append(f"- **{', '.join(samples_in_cluster)}** form a similar texture cluster.")
+                        except Exception:
+                            pass
+
+                    if not pca_insights:
+                        pca_insights.append("- The samples occupy distinct positions in texture space, showing how each one compares to the control.")
+
+                    for insight in pca_insights:
+                        st.markdown(insight)
             else:
                 st.info("PCA requires at least 2 samples.")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1132,7 +1198,45 @@ if run_analysis or "analysis_done" in st.session_state:
             st.markdown("<p class='sub-text'>Z-score standardized values plotted as a spider chart. A sample with a profile similar to control will overlap closely with it.</p>", unsafe_allow_html=True)
             if len(_samples) >= 2:
                 fig_radar = plot_radar(means_df, z_df, sample_colors, _control)
-                st.plotly_chart(fig_radar, use_container_width=True)
+                st.plotly_chart(fig_radar, width='stretch')
+                st.markdown("**Key Insights:**")
+                # Radar chart sample insights
+                radar_insights = []
+
+                # Find samples with the largest deviations from the average profile
+                for samp in _samples:
+                    if samp != _control and samp in z_df.index:
+                        profile = z_df.loc[samp, ALL_PARAMS].values
+                        avg_profile = z_df.loc[_samples, ALL_PARAMS].mean().values
+                        deviation = np.abs(profile - avg_profile)
+                        max_dev_param = ALL_PARAMS[np.argmax(deviation)]
+                        max_deviation = deviation.max()
+
+                        if max_deviation > 0.5:
+                            direction = "higher" if profile[np.argmax(deviation)] > avg_profile[np.argmax(deviation)] else "lower"
+                            radar_insights.append(f"- **{samp}** differs most on {max_dev_param.lower()} ({direction}), showing its strongest texture contrast with the sample set.")
+
+                # Find most balanced vs most extreme profiles
+                if len(_samples) > 2:
+                    profile_variances = {}
+                    for samp in _samples:
+                        if samp in z_df.index:
+                            profile_variances[samp] = np.var(z_df.loc[samp, ALL_PARAMS].values)
+
+                    if profile_variances:
+                        most_balanced = min(profile_variances, key=profile_variances.get)
+                        most_extreme = max(profile_variances, key=profile_variances.get)
+
+                        if most_balanced != _control:
+                            radar_insights.append(f"- **{most_balanced}** has the most balanced texture profile, indicating consistency across parameters.")
+                        if most_extreme != _control and most_extreme != most_balanced:
+                            radar_insights.append(f"- **{most_extreme}** has the most variable profile, suggesting a more extreme texture behavior.")
+
+                if not radar_insights:
+                    radar_insights.append("- Samples show subtle differences in standardized texture parameters, with no sample dominating any single attribute.")
+
+                for insight in radar_insights:
+                    st.markdown(insight)
             else:
                 st.info("Radar chart requires at least 2 samples.")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1144,6 +1248,8 @@ if run_analysis or "analysis_done" in st.session_state:
 
         pct_rows = {}
         for samp in non_ctrl:
+            if samp not in means_df.index:
+                continue
             row = {}
             for param in ALL_PARAMS:
                 ctrl_v = means_df.loc[_control, param]
@@ -1158,80 +1264,191 @@ if run_analysis or "analysis_done" in st.session_state:
             x=pct_hm_df.columns.tolist(),
             y=pct_hm_df.index.tolist(),
             colorscale=[[0, "#ff375f"], [0.5, "#ffffff"], [1, "#0071e3"]],
-            zmid=0,
-            text=[[f"{v:+.1f}%" for v in row] for row in pct_hm_df.values],
-            texttemplate="%{text}",
-            textfont=dict(size=12, family="Inter"),
-            colorbar=dict(title="% Diff", tickfont=dict(size=11)),
+            hoverongaps=False,
         ))
+
         fig_heat.update_layout(
+            title=dict(text="Percentage Difference Heatmap", font=dict(size=16, family="Inter", color="#1d1d1f"), x=0.0),
             plot_bgcolor="#ffffff",
             paper_bgcolor="#ffffff",
+            xaxis=dict(title="Texture Parameters", tickfont=dict(size=12)),
+            yaxis=dict(title="Samples", tickfont=dict(size=12), autorange="reversed"),
             font=dict(family="Inter", color="#1d1d1f"),
-            xaxis=dict(tickfont=dict(size=12)),
-            yaxis=dict(tickfont=dict(size=12)),
-            margin=dict(l=40, r=40, t=20, b=40),
-            height=max(200, 60 * len(non_ctrl) + 80),
+            height=400,
+            margin=dict(l=60, r=60, t=80, b=60),
         )
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.plotly_chart(fig_heat, width='stretch')
+        
+        st.markdown("**Key Insights:**")
+        # Generate heatmap insights
+        heatmap_insights = []
+        
+        # Find which parameters show the most variation
+        param_variation = {}
+        for param in ALL_PARAMS:
+            param_vals = [pct_hm_df.loc[samp, param] for samp in pct_hm_df.index if samp in pct_hm_df.columns]
+            param_variation[param] = np.std(param_vals) if param_vals else 0
+        
+        most_variable_param = max(param_variation, key=param_variation.get)
+        least_variable_param = min(param_variation, key=param_variation.get)
+        
+        heatmap_insights.append(f"- **{most_variable_param}** shows the most variation across samples (most colored cells), indicating it's the key differentiator.")
+        heatmap_insights.append(f"- **{least_variable_param}** is most consistent across samples (lighter cells).")
+        
+        # Find which samples differ most from control
+        sample_variation = {}
+        for samp in pct_hm_df.index:
+            sample_vals = [abs(pct_hm_df.loc[samp, param]) for param in pct_hm_df.columns]
+            sample_variation[samp] = np.mean(sample_vals)
+        
+        if sample_variation:
+            most_different_samp = max(sample_variation, key=sample_variation.get)
+            least_different_samp = min(sample_variation, key=sample_variation.get)
+            heatmap_insights.append(f"- **{most_different_samp}** differs most from control overall (most colored row).")
+            if least_different_samp != most_different_samp:
+                heatmap_insights.append(f"- **{least_different_samp}** is closest to control overall (lightest row).")
+        
+        # Check for MaxShear issues
+        if "MaxShear" in pct_hm_df.columns:
+            maxshear_vals = pct_hm_df["MaxShear"].values
+            samples_lower_maxshear = [pct_hm_df.index[i] for i, v in enumerate(maxshear_vals) if v < 0]
+            if samples_lower_maxshear:
+                heatmap_insights.append(f"- **Red in MaxShear column** for {', '.join(samples_lower_maxshear)}: These samples have lower shear force (potential structure issues).")
+        
+        for insight in heatmap_insights:
+            st.markdown(insight)
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────
-# TAB 4 — CRUMB IMAGE ANALYSIS
-# ─────────────────────────────────────────────
-with tab_image:
-
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("<p class='section-title'>Crumb Image Analysis</p>", unsafe_allow_html=True)
-    st.markdown("<p class='sub-text'>Upload a photograph of a cake cross-section. The tool performs an automated visual analysis of crumb color, pore structure, and cell wall definition using image processing. For best results, use a well-lit, close-up shot of the cut face.</p>", unsafe_allow_html=True)
-
-    uploaded_images = st.file_uploader(
-        "Upload one or more cake cross-section images",
-        type=["jpg", "jpeg", "png", "bmp", "tiff"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if uploaded_images:
-        for img_file in uploaded_images:
-            img = Image.open(img_file)
-            result = analyze_crumb_image(img)
-
-            st.markdown(f"<div class='card'>", unsafe_allow_html=True)
-            st.markdown(f"<p class='section-title'>{img_file.name}</p>", unsafe_allow_html=True)
-
-            img_col, info_col = st.columns([1, 2])
-            with img_col:
-                st.image(img, use_container_width=True)
-            with info_col:
-                metric_items = [
-                    ("Brightness", f"{result['Brightness']} / 255", result["Bake Level"]),
-                    ("Contrast",   f"{result['Contrast']}",         result["Pore Structure"]),
-                    ("Edge Density", f"{result['Edge Density']}",   result["Cell Structure"]),
-                ]
-                for label, value, note in metric_items:
-                    st.markdown(
-                        f"<div style='margin-bottom:14px;'>"
-                        f"<span style='font-size:13px;font-weight:600;color:#1d1d1f;'>{label}:</span> "
-                        f"<span style='font-size:13px;color:#3a3a3c;'>{value}</span><br>"
-                        f"<span class='sub-text'>{note}</span>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
+        # Parameter Correlation Analysis
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<p class='section-title'>Parameter Correlations</p>", unsafe_allow_html=True)
+        st.markdown("<p class='sub-text'>Pearson correlations between texture parameters. Only reports correlations with R² ≥ 0.25 and p < 0.05 (confident relationships).</p>", unsafe_allow_html=True)
+        
+        corr_results = compute_parameter_correlations(means_df, min_r_squared=0.25, sig_alpha=0.05)
+        corr_matrix = corr_results['matrix']
+        significant_corrs = corr_results['correlations']
+        
+        # Plot correlation heatmap
+        fig_corr = go.Figure(data=go.Heatmap(
+            z=corr_matrix.values,
+            x=corr_matrix.columns.tolist(),
+            y=corr_matrix.index.tolist(),
+            colorscale=[[0, "#ff375f"], [0.5, "#ffffff"], [1, "#0071e3"]],
+            zmid=0,
+            zmin=-1,
+            zmax=1,
+            hoverongaps=False,
+            text=np.round(corr_matrix.values, 2),
+            texttemplate='%{text}',
+            textfont={"size": 10},
+        ))
+        
+        fig_corr.update_layout(
+            title=dict(text="Texture Parameter Correlation Matrix (Pearson)", font=dict(size=16, family="Inter", color="#1d1d1f"), x=0.0),
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
+            xaxis=dict(title="Parameters", tickfont=dict(size=11)),
+            yaxis=dict(title="Parameters", tickfont=dict(size=11)),
+            font=dict(family="Inter", color="#1d1d1f"),
+            height=500,
+            margin=dict(l=100, r=60, t=80, b=100),
+        )
+        st.plotly_chart(fig_corr, width='stretch')
+        
+        # Report significant correlations
+        st.markdown("**Significant Correlations (p < 0.05, R² ≥ 0.25):**")
+        
+        if significant_corrs:
+            for corr in significant_corrs:
+                direction_text = "increases with" if corr['direction'] == 'positive' else "decreases with"
+                r_pct = corr['r_squared'] * 100
                 st.markdown(
-                    f"<div class='interp-block'>"
-                    f"<b>Summary:</b><br>{result['Aeration']} {result['Crumb Color']}"
-                    f"</div>",
-                    unsafe_allow_html=True,
+                    f"- **{corr['param1']} {direction_text} {corr['param2']}**: "
+                    f"r = {corr['r']}, R² = {corr['r_squared']} ({r_pct:.0f}% variance explained), p = {corr['p_value']}"
                 )
-            st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div style='text-align:center;padding:60px 0;color:#aeaeb2;font-size:14px;'>
-            No image uploaded yet. Drop a cake cross-section photo above.
-        </div>
-        """, unsafe_allow_html=True)
+            
+            # Add interpretation
+            st.markdown("**Interpretation:**")
+            
+            # Check for hardness-related correlations
+            hardness_corrs = [c for c in significant_corrs if 'Hardness' in c['param1'] or 'Hardness' in c['param2']]
+            if hardness_corrs:
+                st.markdown("- **Hardness correlations**: Changes in cake hardness strongly affect..." + 
+                           ", ".join([c['param2'] if c['param1'] == 'Hardness' else c['param1'] for c in hardness_corrs[:2]]))
+            
+            # Check for MaxShear correlations (structure-related)
+            maxshear_corrs = [c for c in significant_corrs if 'MaxShear' in c['param1'] or 'MaxShear' in c['param2']]
+            if maxshear_corrs:
+                st.markdown("- **MaxShear (structure) correlations**: Cake structural strength (MaxShear) is connected to " +
+                           ", ".join([c['param2'] if c['param1'] == 'MaxShear' else c['param1'] for c in maxshear_corrs[:2]]) +
+                           ". This suggests formulation changes affect multiple structural properties simultaneously.")
+            
+            # Check for other clusters
+            cohesion_corrs = [c for c in significant_corrs if 'Cohesiveness' in c['param1'] or 'Cohesiveness' in c['param2']]
+            if cohesion_corrs:
+                st.markdown("- **Cohesiveness correlations**: Cake cohesion is strongly linked to " +
+                           ", ".join([c['param2'] if c['param1'] == 'Cohesiveness' else c['param1'] for c in cohesion_corrs[:2]]) +
+                           ". These parameters may be modified by similar formulation factors.")
+        else:
+            st.markdown("_No significant correlations detected with confidence threshold R² ≥ 0.25 (p < 0.05). Parameters vary independently, suggesting diverse formulation effects._")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # TAB 4 — CRUMB IMAGE ANALYSIS
+    # ─────────────────────────────────────────────
+    with tab_image:
+
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<p class='section-title'>Cake Crumb Image Analysis</p>", unsafe_allow_html=True)
+        st.markdown(
+            "<p class='sub-text'>Upload a photo of your cake crumb to analyze texture characteristics. The analysis provides quantitative metrics and qualitative interpretations of crumb structure, aeration, and bake level.</p>",
+            unsafe_allow_html=True,
+        )
+
+        uploaded_image = st.file_uploader("Upload cake crumb image", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+
+        if uploaded_image:
+            try:
+                image = Image.open(uploaded_image)
+                
+                # Display image
+                col_img1, col_img2 = st.columns([1, 2])
+                with col_img1:
+                    st.image(image, width='stretch', caption="Uploaded Image")
+                
+                with col_img2:
+                    # Analyze
+                    results = analyze_cake_image(image)
+                    
+                    st.markdown("<p class='section-title' style='margin-top:0;'>Quantitative Metrics</p>", unsafe_allow_html=True)
+                    metrics_df = pd.DataFrame({
+                        "Parameter": list(results.keys())[:3],
+                        "Value": [results[k] for k in list(results.keys())[:3]]
+                    })
+                    st.dataframe(metrics_df, width='stretch', hide_index=True)
+                    
+                    st.markdown("<p class='section-title'>Qualitative Analysis</p>", unsafe_allow_html=True)
+                    for key, value in list(results.items())[3:]:
+                        st.markdown(f"**{key}:** {value}")
+                        
+            except Exception as e:
+                st.error(f"Could not analyze image: {e}")
+        else:
+            st.markdown(
+                "<div style='text-align:center;padding:60px 0;color:#aeaeb2;font-size:14px;'>"
+                "Upload a cake crumb image above to analyze texture characteristics."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────
+st.markdown("""
+<div style='text-align:center;padding:40px 0;color:#6e6e73;font-size:12px;border-top:1px solid #e8e8ed;margin-top:60px;'>
+    Cakamoka — Texture Profile Analysis Tool | Built with Streamlit
+</div>
+""", unsafe_allow_html=True)
