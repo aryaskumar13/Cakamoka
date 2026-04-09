@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
+from scipy.spatial import cKDTree
 from skimage import feature, measure, morphology
 from skimage.feature import graycomatrix, graycoprops
 
@@ -36,16 +37,20 @@ class AnalyzerConfig:
     glcm_distances: Tuple[int, ...] = (1, 2)
     glcm_angles: Tuple[float, ...] = (0.0, np.pi / 4, np.pi / 2, 3 * np.pi / 4)
 
-    # Composite scoring weights (must sum to 1.0)
+    # Composite scoring weights (must sum to 1.0) — includes new structural metrics
     score_weights: Dict[str, float] = field(
         default_factory=lambda: {
-            "wall_thickness": 0.20,
-            "connectivity": 0.20,
-            "homogeneity": 0.15,
-            "pore_cv": 0.15,
-            "thin_fraction": 0.10,
-            "fracture_index": 0.15,
-            "excess_porosity": 0.05,
+            "wall_thickness": 0.12,
+            "connectivity": 0.12,
+            "homogeneity": 0.08,
+            "pore_cv": 0.10,
+            "thin_fraction": 0.05,
+            "fracture_index": 0.10,
+            "excess_porosity": 0.03,
+            "circularity": 0.12,
+            "porosity_uniformity": 0.08,
+            "clustering": 0.12,
+            "wall_variance": 0.08,
         }
     )
 
@@ -55,6 +60,14 @@ class AnalyzerConfig:
     # Classification thresholds
     strong_threshold: float = 70.0
     moderate_threshold: float = 40.0
+
+    # New-metric classification thresholds
+    cell_size_cv_weak: float = 0.80       # CV above this → weak indicator
+    circularity_weak: float = 0.50        # mean circularity below this → weak
+    circularity_strong: float = 0.65      # mean circularity above this → strong
+    clustering_weak: float = 1.50         # NNI-inverted: >1 = clustered = bad
+    porosity_uniformity_strong: float = 0.05  # std below this = uniform = good
+    wall_variance_strong: float = 4.0     # variance below this = consistent = good
 
     # Optional ImageJ integration
     try_imagej: bool = False
@@ -150,7 +163,8 @@ class CrumbAnalyzer:
         porosity = air_area / roi_area if roi_area > 0 else np.nan
 
         labeled = measure.label(pores, connectivity=2)
-        areas = np.array([r.area for r in measure.regionprops(labeled)], dtype=float)
+        labeled_props = measure.regionprops(labeled)
+        areas = np.array([r.area for r in labeled_props], dtype=float)
 
         if areas.size == 0:
             return {
@@ -158,16 +172,26 @@ class CrumbAnalyzer:
                 "mean_pore_size": 0.0,
                 "std_pore_size": 0.0,
                 "pore_cv": 0.0,
+                "circularity": 0.0,
             }
 
         mean_a = float(np.mean(areas))
         std_a = float(np.std(areas))
         cv_a = float(std_a / mean_a) if mean_a > 1e-9 else 0.0
+        # Mean circularity: 4π·area/perimeter² (1.0 = perfect circle)
+        circularity_vals = []
+        for r in labeled_props:
+            if r.perimeter > 0:
+                c = (4.0 * np.pi * r.area) / (r.perimeter ** 2)
+                circularity_vals.append(float(min(c, 1.0)))
+        mean_circ = float(np.mean(circularity_vals)) if circularity_vals else 0.0
+
         return {
             "porosity": porosity,
             "mean_pore_size": mean_a,
             "std_pore_size": std_a,
             "pore_cv": cv_a,
+            "circularity": mean_circ,
         }
 
     def _wall_features(self, crumb: np.ndarray) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
@@ -179,10 +203,65 @@ class CrumbAnalyzer:
         thin_mask = crumb & (local_thickness < self.config.thin_thickness_px)
         thin_frac = float(thin_mask.sum() / crumb_pixels) if crumb_pixels > 0 else np.nan
 
+        wall_thick_var = float(np.var(local_thickness[crumb])) if crumb_pixels > 0 else np.nan
+
         return {
             "mean_wall_thickness": mean_thick,
             "thin_region_fraction": thin_frac,
+            "wall_thickness_var": wall_thick_var,
         }, local_thickness, thin_mask
+    def _spatial_features(self, pores: np.ndarray, roi: np.ndarray) -> Dict[str, float]:
+        """Porosity uniformity (std of tile-level porosities) and Clark-Evans clustering index."""
+        ys, xs = np.where(roi)
+        if ys.size == 0:
+            return {"porosity_uniformity": 0.0, "clustering_index": 1.0}
+
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        n_tiles = 4  # 4×4 grid → 16 candidate tiles
+
+        tile_h = max(1, (y1 - y0) // n_tiles)
+        tile_w = max(1, (x1 - x0) // n_tiles)
+
+        local_pors = []
+        for ti in range(n_tiles):
+            for tj in range(n_tiles):
+                sy = y0 + ti * tile_h
+                ey = y0 + (ti + 1) * tile_h
+                sx = x0 + tj * tile_w
+                ex = x0 + (tj + 1) * tile_w
+                tile_roi = roi[sy:ey, sx:ex]
+                tile_pores = pores[sy:ey, sx:ex]
+                roi_px = int(tile_roi.sum())
+                if roi_px > 10:
+                    local_pors.append(float(tile_pores.sum()) / roi_px)
+
+        porosity_std = float(np.std(local_pors)) if len(local_pors) > 1 else 0.0
+
+        # Clark-Evans NNI: mean observed NN-dist / expected NN-dist under CSR
+        # Invert so that NNI < 1 (clustered) → high clustering_index value (bad)
+        labeled_p = measure.label(pores, connectivity=2)
+        props_p = measure.regionprops(labeled_p)
+        n_pores = len(props_p)
+
+        if n_pores < 2:
+            clustering_index = 1.0
+        else:
+            centroids = np.array([p.centroid for p in props_p], dtype=float)
+            roi_area = float(roi.sum())
+            density = n_pores / roi_area
+            tree = cKDTree(centroids)
+            dists, _ = tree.query(centroids, k=2)  # k=2: first hit is self
+            mean_nn = float(np.mean(dists[:, 1]))
+            expected_nn = 0.5 / np.sqrt(density) if density > 0 else np.inf
+            nni = mean_nn / expected_nn if expected_nn > 0 else 1.0
+            # Invert: clustered (NNI<1) → clustering_index > 1
+            clustering_index = float(1.0 / max(float(nni), 0.1))
+
+        return {
+            "porosity_uniformity": porosity_std,
+            "clustering_index": clustering_index,
+        }
 
     def _connectivity_features(self, crumb: np.ndarray) -> Tuple[Dict[str, float], np.ndarray, np.ndarray, np.ndarray]:
         skel = morphology.skeletonize(crumb)
@@ -286,8 +365,8 @@ class CrumbAnalyzer:
 
         for size in sizes:
             h = n // size
-            reshaped = z.reshape(h, size, h, size)
-            blocks = reshaped.any(axis=(1, 3))
+            reshaped = z.reshape(h, size, h, size).transpose(0, 2, 1, 3)
+            blocks = reshaped.any(axis=(2, 3))
             counts.append(blocks.sum())
 
         counts = np.array(counts, dtype=float)
@@ -366,9 +445,13 @@ class CrumbAnalyzer:
             "connectivity": ("Connectivity ratio", True),
             "homogeneity": ("Homogeneity", True),
             "pore_cv": ("Pore CV", False),
-            "thin_fraction": ("Thin region fraction", False),
-            "fracture_index": ("Fracture index", False),
-            "excess_porosity": ("excess_porosity", False),
+                "thin_fraction": ("Thin region fraction", False),
+                "fracture_index": ("Fracture index", False),
+                "excess_porosity": ("excess_porosity", False),
+                "circularity": ("Circularity", True),
+                "porosity_uniformity": ("Porosity uniformity", False),
+                "clustering": ("Clustering index", False),
+                "wall_variance": ("Wall thickness variance", False),
         }
 
         norm_cols = {}
@@ -403,45 +486,61 @@ class CrumbAnalyzer:
         reasons_bad: List[str] = []
         reasons_good: List[str] = []
 
-        if row["Fracture index"] > 0.025:
+        # ── Weak signals ──────────────────────────────────
+        if row.get("Fracture index", 0.0) > 0.025:
             reasons_bad.append("high fracture index")
-        if row["Connectivity ratio"] < 0.20:
-            reasons_bad.append("low connectivity")
-        if row["Pore CV"] > 1.0:
-            reasons_bad.append("high pore-size variability")
-        if row["Thin region fraction"] > 0.40:
+        if row.get("Connectivity ratio", 1.0) < 0.20:
+            reasons_bad.append("low inter-pore connectivity")
+        if row.get("Pore CV", 0.0) > self.config.cell_size_cv_weak:
+            reasons_bad.append(f"high cell-size CV ({row.get('Pore CV', 0):.2f}) — irregular pore sizes")
+        if row.get("Thin region fraction", 0.0) > 0.40:
             reasons_bad.append("large thin-wall fraction")
-        if row["Porosity"] > self.config.porosity_high_threshold:
+        if row.get("Porosity", 0.0) > self.config.porosity_high_threshold:
             reasons_bad.append("excessive porosity")
+        if row.get("Clustering index", 0.0) > self.config.clustering_weak:
+            reasons_bad.append(f"pore clustering (index={row.get('Clustering index', 0):.2f}) — uneven pore distribution")
+        if row.get("Circularity", 1.0) < self.config.circularity_weak:
+            reasons_bad.append(f"low pore circularity ({row.get('Circularity', 0):.2f}) — irregular pore shapes")
 
-        if row["Mean wall thickness"] > 4.0:
-            reasons_good.append("thicker crumb walls")
-        if row["Homogeneity"] > 0.45:
-            reasons_good.append("higher texture homogeneity")
-        if row["Connectivity ratio"] >= 0.25:
-            reasons_good.append("better network connectivity")
+        # ── Strong signals ─────────────────────────────────
+        if row.get("Mean wall thickness", 0.0) > 4.0:
+            reasons_good.append("thick crumb walls")
+        if row.get("Homogeneity", 0.0) > 0.45:
+            reasons_good.append("high texture homogeneity")
+        if row.get("Connectivity ratio", 0.0) >= 0.25:
+            reasons_good.append("good network connectivity")
+        if row.get("Circularity", 0.0) > self.config.circularity_strong:
+            reasons_good.append(f"high pore circularity ({row.get('Circularity', 0):.2f}) — round, stable pores")
+        if row.get("Porosity uniformity", 1.0) < self.config.porosity_uniformity_strong:
+            reasons_good.append("uniform porosity distribution across regions")
+        if row.get("Pore CV", 1.0) < 0.50:
+            reasons_good.append(f"consistent cell sizes (CV={row.get('Pore CV', 0):.2f})")
+        if row.get("Wall thickness variance", 100.0) < self.config.wall_variance_strong:
+            reasons_good.append("consistent wall thickness throughout")
 
+        # ── Classification narratives ──────────────────────
         if row["Classification"] == "Weak / Crumbly":
+            label = "Weak / Crumbly"
             if reasons_bad:
                 return (
-                    f"Likely weak/crumbly structure driven by {', '.join(reasons_bad[:2])}. "
-                    f"Micro-tears or discontinuities may be present."
+                    f"{label}: driven by {', '.join(reasons_bad[:3])}. "
+                    f"Micro-tears or structural discontinuities are likely."
                 )
-            return "Likely weak/crumbly structure based on low composite score and unfavorable morphology."
+            return f"{label}: low composite score with unfavorable morphology."
 
         if row["Classification"] == "Strong":
             if reasons_good:
                 return (
-                    f"Strong structure with {', '.join(reasons_good[:2])}. "
-                    f"Pore pattern appears relatively stable and well-supported."
+                    f"Strong crumb: {', '.join(reasons_good[:3])}. "
+                    f"Pore network is stable and well-supported."
                 )
-            return "Strong structure indicated by favorable wall support and connectivity metrics."
+            return "Strong crumb: favorable wall support and connectivity across all metrics."
 
         # Moderate
         if reasons_bad and reasons_good:
             return (
-                f"Moderate structure: mixed signals with {reasons_good[0]} but also {reasons_bad[0]}. "
-                f"Borderline crumb robustness."
+                f"Moderate crumb: {reasons_good[0]}, but {reasons_bad[0]}. "
+                f"Borderline structure — consider addressing {reasons_bad[0]}."
             )
         return "Moderate structure with intermediate porosity-wall-connectivity balance."
 
@@ -467,14 +566,20 @@ class CrumbAnalyzer:
 
             self._save_visuals(sample, output_dir / "visual_outputs", rgb, crumb, skel, thin_mask, fractures)
 
+            spatial = self._spatial_features(pores, roi)
+
             rows.append(
                 {
                     "Sample name": sample,
                     "Porosity": pore["porosity"],
                     "Mean pore size": pore["mean_pore_size"],
                     "Pore CV": pore["pore_cv"],
+                    "Circularity": pore["circularity"],
                     "Mean wall thickness": wall["mean_wall_thickness"],
+                    "Wall thickness variance": wall["wall_thickness_var"],
                     "Thin region fraction": wall["thin_region_fraction"],
+                    "Porosity uniformity": spatial["porosity_uniformity"],
+                    "Clustering index": spatial["clustering_index"],
                     "Connectivity ratio": conn["connectivity_ratio"],
                     "Fracture index": frac["fracture_index"],
                     "Homogeneity": tex["glcm_homogeneity"],
@@ -494,7 +599,11 @@ class CrumbAnalyzer:
             "Porosity",
             "Mean pore size",
             "Pore CV",
+            "Circularity",
+            "Porosity uniformity",
+            "Clustering index",
             "Mean wall thickness",
+            "Wall thickness variance",
             "Thin region fraction",
             "Connectivity ratio",
             "Fracture index",
@@ -511,7 +620,11 @@ class CrumbAnalyzer:
             "Porosity",
             "Mean pore size",
             "Pore CV",
+            "Circularity",
+            "Porosity uniformity",
+            "Clustering index",
             "Mean wall thickness",
+            "Wall thickness variance",
             "Thin region fraction",
             "Connectivity ratio",
             "Fracture index",
