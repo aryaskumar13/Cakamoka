@@ -61,13 +61,29 @@ class AnalyzerConfig:
     strong_threshold: float = 70.0
     moderate_threshold: float = 40.0
 
-    # New-metric classification thresholds
-    cell_size_cv_weak: float = 0.80       # CV above this → weak indicator
-    circularity_weak: float = 0.50        # mean circularity below this → weak
-    circularity_strong: float = 0.65      # mean circularity above this → strong
+    # Classification thresholds aligned with specification rules
+    cell_size_cv_weak: float = 1.50       # CV above this → weak (spec: CV > 1.5)
+    circularity_weak: float = 0.75        # mean circularity below this → weak (spec: < 0.75)
+    circularity_strong: float = 0.85      # mean circularity above this → strong (spec: > 0.85)
     clustering_weak: float = 1.50         # NNI-inverted: >1 = clustered = bad
     porosity_uniformity_strong: float = 0.05  # std below this = uniform = good
     wall_variance_strong: float = 4.0     # variance below this = consistent = good
+    connectivity_strong: float = 4.0      # connectivity ratio above this → strong (spec: > 4)
+    homogeneity_strong: float = 0.90      # homogeneity above this → strong (spec: > 0.9)
+    homogeneity_weak: float = 0.80        # homogeneity below this → weak (spec: < 0.8)
+    porosity_weak: float = 0.05           # porosity above this → weak (spec: > 0.05)
+    porosity_strong: float = 0.01         # porosity below this → strong/dense (spec: < 0.01)
+    mean_pore_size_large: float = 150.0   # mean pore size above this → weak tendency
+    fracture_index_weak: float = 0.03     # fracture index above this → weak
+    wall_thickness_strong: float = 4.0    # mean wall thickness above this → strong
+    wall_thickness_weak: float = 2.0      # mean wall thickness below this → weak
+
+    # Minimum reliable-variable fraction required to produce a classification
+    classification_min_reliable_fraction: float = 0.70
+
+    # Illumination normalization
+    illum_blur_ksize: int = 61            # large Gaussian kernel for background estimation
+    median_ksize: int = 3                 # median denoising kernel after CLAHE
 
     # Optional ImageJ integration
     try_imagej: bool = False
@@ -112,18 +128,47 @@ class CrumbAnalyzer:
         return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     def _preprocess(self, img_rgb: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Preprocess with mandatory illumination correction before any feature extraction.
+
+        Pipeline:
+          1. Grayscale conversion
+          2. Background estimation via large Gaussian blur
+          3. Illumination normalization: corrected = gray / background * 128
+          4. CLAHE contrast enhancement
+          5. Median denoising
+        """
         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
         if self._ij is not None:
-            # Optional ImageJ hook point. Kept minimal to avoid runtime dependency when not installed.
+            # Optional ImageJ hook point.
             pass
 
+        # ── Step 2: Estimate slow-varying illumination background ──
+        k = self.config.illum_blur_ksize
+        # Kernel must be odd
+        if k % 2 == 0:
+            k += 1
+        background = cv2.GaussianBlur(gray.astype(np.float32), (k, k), 0)
+        # Avoid divide-by-zero; clip background floor to 1
+        background = np.clip(background, 1.0, None)
+
+        # ── Step 3: Normalize illumination ──
+        corrected = (gray.astype(np.float32) / background * 128.0)
+        corrected = np.clip(corrected, 0, 255).astype(np.uint8)
+
+        # ── Step 4: CLAHE on the illumination-corrected image ──
         clahe = cv2.createCLAHE(
             clipLimit=self.config.clahe_clip_limit,
             tileGridSize=self.config.clahe_tile_grid,
         )
-        norm = clahe.apply(gray)
-        blur = cv2.GaussianBlur(norm, self.config.gaussian_kernel, 0)
+        norm = clahe.apply(corrected)
+
+        # ── Step 5: Median denoising ──
+        mk = self.config.median_ksize
+        if mk % 2 == 0:
+            mk += 1
+        blur = cv2.medianBlur(norm, mk)
+
         return gray, norm, blur
 
     def _largest_component(self, mask: np.ndarray) -> np.ndarray:
@@ -135,9 +180,22 @@ class CrumbAnalyzer:
         return labeled == largest.label
 
     def _segment_crumb(self, blur_gray: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        # Otsu threshold and choose polarity with most plausible largest connected crumb body.
-        _, th = cv2.threshold(blur_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        b1 = th > 0
+        """Segment crumb using adaptive thresholding (not global) to handle residual
+        local intensity variation after illumination correction."""
+        h, w = blur_gray.shape
+        # Block size must be odd and reasonably large relative to image
+        block = max(11, (min(h, w) // 20) | 1)  # bitwise OR 1 forces odd
+        if block % 2 == 0:
+            block += 1
+
+        # Adaptive Gaussian threshold — pores tend to be darker than surrounding crumb
+        th_adapt = cv2.adaptiveThreshold(
+            blur_gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            block, 2
+        )
+        b1 = th_adapt > 0
         b2 = ~b1
 
         l1 = self._largest_component(morphology.remove_small_objects(b1, 128))
@@ -156,6 +214,92 @@ class CrumbAnalyzer:
         pores = morphology.remove_small_objects(pores, self.config.min_pore_area_px)
 
         return crumb.astype(bool), pores.astype(bool), roi.astype(bool)
+
+    def _validate_segmentation(
+        self, gray_original: np.ndarray, norm: np.ndarray, pores: np.ndarray, roi: np.ndarray
+    ) -> Tuple[str, List[str]]:
+        """Validate preprocessing and segmentation quality.
+
+        Returns:
+            confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+            warnings: list of human-readable warning strings
+        """
+        warnings_list: List[str] = []
+        penalty = 0
+
+        # ── Check 1: Residual lighting gradient in illumination-corrected image ──
+        # Tile the corrected image and measure std of tile means; high spread = gradient remains
+        h, w = norm.shape
+        n_tiles = 4
+        th = max(1, h // n_tiles)
+        tw = max(1, w // n_tiles)
+        tile_means = []
+        for ti in range(n_tiles):
+            for tj in range(n_tiles):
+                tile = norm[ti * th:(ti + 1) * th, tj * tw:(tj + 1) * tw]
+                if tile.size > 0:
+                    tile_means.append(float(tile.mean()))
+        if len(tile_means) > 1:
+            gradient_spread = float(np.std(tile_means))
+            if gradient_spread > 30:
+                warnings_list.append(
+                    f"Lighting gradient likely present after correction (tile mean std={gradient_spread:.1f}). "
+                    "Illumination-sensitive metrics may be unreliable."
+                )
+                penalty += 2
+            elif gradient_spread > 15:
+                warnings_list.append(
+                    f"Mild residual lighting variation detected (tile mean std={gradient_spread:.1f})."
+                )
+                penalty += 1
+
+        # ── Check 2: Pore coverage sanity ──
+        roi_area = int(roi.sum())
+        pore_area = int(pores.sum())
+        porosity = pore_area / roi_area if roi_area > 0 else 0.0
+        if porosity < 0.005:
+            warnings_list.append(
+                "Very few pores detected (<0.5% porosity). Segmentation may have failed or image has no visible air cells."
+            )
+            penalty += 2
+        elif porosity > 0.80:
+            warnings_list.append(
+                f"Extremely high porosity ({porosity:.1%}). Segmentation polarity may be inverted."
+            )
+            penalty += 2
+
+        # ── Check 3: Pore count — too few to compute reliable statistics ──
+        labeled = measure.label(pores, connectivity=2)
+        n_pores = labeled.max()
+        if n_pores < 5:
+            warnings_list.append(
+                f"Only {n_pores} pore(s) detected. Statistical metrics (CV, clustering, uniformity) are not reliable."
+            )
+            penalty += 2
+        elif n_pores < 15:
+            warnings_list.append(
+                f"Low pore count ({n_pores}). Statistical metrics have reduced reliability."
+            )
+            penalty += 1
+
+        # ── Check 4: ROI coverage — if ROI is very small, likely segmentation failure ──
+        total_pixels = gray_original.size
+        roi_fraction = roi_area / total_pixels if total_pixels > 0 else 0.0
+        if roi_fraction < 0.05:
+            warnings_list.append(
+                f"ROI covers only {roi_fraction:.1%} of image. Segmentation may have failed."
+            )
+            penalty += 2
+
+        # ── Assign confidence ──
+        if penalty == 0:
+            confidence = "HIGH"
+        elif penalty <= 1:
+            confidence = "MEDIUM"
+        else:
+            confidence = "LOW"
+
+        return confidence, warnings_list
 
     def _pore_features(self, pores: np.ndarray, roi: np.ndarray) -> Dict[str, float]:
         roi_area = float(roi.sum())
@@ -434,105 +578,227 @@ class CrumbAnalyzer:
             fig.savefig(sample_dir / "debug_binary.png", dpi=150)
             plt.close(fig)
 
-    def _compute_scores(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute_scores(self, df: pd.DataFrame, seg_confidence: Optional[str] = None) -> pd.DataFrame:
+        """Score each sample using absolute-threshold rule voting per specification.
+
+        Each rule produces +1 (strong indicator) or -1 (weak indicator).
+        Confidence is tracked per metric; LOW-confidence metrics are excluded from voting
+        and marked 'Not Reliable' in the confidence column.
+
+        Classification only produced when ≥70% of rules are HIGH/MEDIUM confidence.
+        """
+        cfg = self.config
         out = df.copy()
 
-        # Derived penalty for excessive porosity only.
-        out["excess_porosity"] = np.clip(out["Porosity"] - self.config.porosity_high_threshold, a_min=0, a_max=None)
+        # LOW segmentation confidence degrades all metrics that depend on pore/wall detection
+        seg_low = (seg_confidence == "LOW") if seg_confidence else False
 
-        features = {
-            "wall_thickness": ("Mean wall thickness", True),
-            "connectivity": ("Connectivity ratio", True),
-            "homogeneity": ("Homogeneity", True),
-            "pore_cv": ("Pore CV", False),
-                "thin_fraction": ("Thin region fraction", False),
-                "fracture_index": ("Fracture index", False),
-                "excess_porosity": ("excess_porosity", False),
-                "circularity": ("Circularity", True),
-                "porosity_uniformity": ("Porosity uniformity", False),
-                "clustering": ("Clustering index", False),
-                "wall_variance": ("Wall thickness variance", False),
-        }
+        def _score_row(row: pd.Series) -> pd.Series:  # noqa: C901
+            votes = 0
+            max_votes = 0
+            reliable_count = 0
+            total_rules = 0
+            conf_map: Dict[str, str] = {}
 
-        norm_cols = {}
-        for key, (col, high_good) in features.items():
-            vals = out[col].astype(float)
-            vmin, vmax = vals.min(), vals.max()
-            if np.isclose(vmin, vmax, equal_nan=True):
-                norm = pd.Series(np.full(len(vals), 0.5), index=vals.index)
+            def _vote(metric_name: str, value, strong_fn, weak_fn,
+                      base_conf: str = "HIGH", nan_unreliable: bool = True):
+                nonlocal votes, max_votes, reliable_count, total_rules
+                total_rules += 1
+                if nan_unreliable and (value is None or (isinstance(value, float) and np.isnan(value))):
+                    conf_map[metric_name] = "NOT RELIABLE"
+                    return
+                if seg_low and metric_name not in ("Homogeneity", "Fracture index"):
+                    conf_map[metric_name] = "LOW"
+                    return
+                conf = base_conf
+                conf_map[metric_name] = conf
+                if conf in ("HIGH", "MEDIUM"):
+                    reliable_count += 1
+                    max_votes += 1
+                    if strong_fn(value):
+                        votes += 1
+                    elif weak_fn(value):
+                        votes -= 1
+
+            # 1. Porosity (AERATION)
+            _vote("Porosity", row.get("Porosity"),
+                  strong_fn=lambda v: v < cfg.porosity_strong,
+                  weak_fn=lambda v: v > cfg.porosity_weak)
+
+            # 2. Mean pore size (AERATION)
+            _vote("Mean pore size", row.get("Mean pore size"),
+                  strong_fn=lambda v: v < 80,
+                  weak_fn=lambda v: v > cfg.mean_pore_size_large)
+
+            # 3. Cell size CV (UNIFORMITY)
+            pore_cv = row.get("Pore CV")
+            cv_conf = "MEDIUM" if (pore_cv is not None and not np.isnan(pore_cv) and pore_cv < 0.3) else "HIGH"
+            _vote("Cell size CV", pore_cv,
+                  strong_fn=lambda v: v < 0.5,
+                  weak_fn=lambda v: v > cfg.cell_size_cv_weak,
+                  base_conf=cv_conf)
+
+            # 4. Porosity uniformity (UNIFORMITY)
+            _vote("Porosity uniformity", row.get("Porosity uniformity"),
+                  strong_fn=lambda v: v < cfg.porosity_uniformity_strong,
+                  weak_fn=lambda v: v > 0.10)
+
+            # 5. Circularity (GEOMETRY)
+            _vote("Circularity", row.get("Circularity"),
+                  strong_fn=lambda v: v > cfg.circularity_strong,
+                  weak_fn=lambda v: v < cfg.circularity_weak)
+
+            # 6. Mean wall thickness (STRUCTURE)
+            _vote("Mean wall thickness", row.get("Mean wall thickness"),
+                  strong_fn=lambda v: v > cfg.wall_thickness_strong,
+                  weak_fn=lambda v: v < cfg.wall_thickness_weak)
+
+            # 7. Wall thickness variance (STRUCTURE)
+            wtv = row.get("Wall thickness variance")
+            # Thick + uniform walls → strong; thick + highly variable → moderate (no vote)
+            mwt = row.get("Mean wall thickness", 0.0) or 0.0
+            def _wall_var_strong(v):
+                return v < cfg.wall_variance_strong and mwt > cfg.wall_thickness_strong
+            def _wall_var_weak(v):
+                return v >= cfg.wall_variance_strong
+            _vote("Wall thickness variance", wtv,
+                  strong_fn=_wall_var_strong,
+                  weak_fn=_wall_var_weak)
+
+            # 8. Connectivity ratio (NETWORK)
+            _vote("Connectivity ratio", row.get("Connectivity ratio"),
+                  strong_fn=lambda v: v > cfg.connectivity_strong,
+                  weak_fn=lambda v: v < 0.5)
+
+            # 9. Clustering index (NETWORK)
+            _vote("Clustering index", row.get("Clustering index"),
+                  strong_fn=lambda v: v < 1.0,
+                  weak_fn=lambda v: v > cfg.clustering_weak)
+
+            # 10. Fracture index (MECHANICAL)
+            _vote("Fracture index", row.get("Fracture index"),
+                  strong_fn=lambda v: v < 0.01,
+                  weak_fn=lambda v: v > cfg.fracture_index_weak,
+                  base_conf="MEDIUM")  # Canny-based; inherently noisier
+
+            # 11. GLCM homogeneity (TEXTURE)
+            _vote("Homogeneity", row.get("Homogeneity"),
+                  strong_fn=lambda v: v > cfg.homogeneity_strong,
+                  weak_fn=lambda v: v < cfg.homogeneity_weak,
+                  base_conf="MEDIUM")  # GLCM computed on masked crop; moderate reliability
+
+            # ── Check if enough reliable metrics to classify ──
+            reliable_fraction = reliable_count / total_rules if total_rules > 0 else 0.0
+            can_classify = reliable_fraction >= cfg.classification_min_reliable_fraction
+
+            # ── Score: map votes to 0–100 ──
+            if max_votes > 0:
+                raw_score = float(votes + max_votes) / float(2 * max_votes) * 100.0
             else:
-                norm = (vals - vmin) / (vmax - vmin)
-            if not high_good:
-                norm = 1.0 - norm
-            norm_cols[key] = norm
+                raw_score = 50.0
+            raw_score = float(np.clip(raw_score, 0.0, 100.0))
 
-        score = np.zeros(len(out), dtype=float)
-        for key, w in self.config.score_weights.items():
-            score += w * norm_cols[key].values
+            # ── Classify ──
+            if not can_classify:
+                classification = "Cannot Determine"
+            elif raw_score >= cfg.strong_threshold:
+                classification = "Strong"
+            elif raw_score >= cfg.moderate_threshold:
+                classification = "Moderate"
+            else:
+                classification = "Weak / Crumbly"
 
-        out["Crumb Strength Score"] = np.clip(score * 100.0, 0.0, 100.0)
+            return pd.Series({
+                "Crumb Strength Score": raw_score,
+                "Classification": classification,
+                "Metric Confidence": str(conf_map),
+                "_reliable_fraction": reliable_fraction,
+            })
 
-        def classify(s: float) -> str:
-            if s > self.config.strong_threshold:
-                return "Strong"
-            if s >= self.config.moderate_threshold:
-                return "Moderate"
-            return "Weak / Crumbly"
-
-        out["Classification"] = out["Crumb Strength Score"].apply(classify)
+        score_cols = out.apply(_score_row, axis=1)
+        out["Crumb Strength Score"] = score_cols["Crumb Strength Score"]
+        out["Classification"] = score_cols["Classification"]
+        out["Metric Confidence"] = score_cols["Metric Confidence"]
         return out
 
     def _interpret_row(self, row: pd.Series) -> str:
+        """Generate a mechanistic narrative using spec-aligned thresholds.
+        Uses only metrics that are not flagged as NOT RELIABLE or LOW confidence.
+        """
+        cfg = self.config
         reasons_bad: List[str] = []
         reasons_good: List[str] = []
 
-        # ── Weak signals ──────────────────────────────────
-        if row.get("Fracture index", 0.0) > 0.025:
-            reasons_bad.append("high fracture index")
-        if row.get("Connectivity ratio", 1.0) < 0.20:
-            reasons_bad.append("low inter-pore connectivity")
-        if row.get("Pore CV", 0.0) > self.config.cell_size_cv_weak:
-            reasons_bad.append(f"high cell-size CV ({row.get('Pore CV', 0):.2f}) — irregular pore sizes")
-        if row.get("Thin region fraction", 0.0) > 0.40:
-            reasons_bad.append("large thin-wall fraction")
-        if row.get("Porosity", 0.0) > self.config.porosity_high_threshold:
-            reasons_bad.append("excessive porosity")
-        if row.get("Clustering index", 0.0) > self.config.clustering_weak:
-            reasons_bad.append(f"pore clustering (index={row.get('Clustering index', 0):.2f}) — uneven pore distribution")
-        if row.get("Circularity", 1.0) < self.config.circularity_weak:
-            reasons_bad.append(f"low pore circularity ({row.get('Circularity', 0):.2f}) — irregular pore shapes")
+        # Helper: skip unreliable metrics
+        def _val(col: str):
+            v = row.get(col)
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                return None
+            return v
 
-        # ── Strong signals ─────────────────────────────────
-        if row.get("Mean wall thickness", 0.0) > 4.0:
-            reasons_good.append("thick crumb walls")
-        if row.get("Homogeneity", 0.0) > 0.45:
-            reasons_good.append("high texture homogeneity")
-        if row.get("Connectivity ratio", 0.0) >= 0.25:
-            reasons_good.append("good network connectivity")
-        if row.get("Circularity", 0.0) > self.config.circularity_strong:
-            reasons_good.append(f"high pore circularity ({row.get('Circularity', 0):.2f}) — round, stable pores")
-        if row.get("Porosity uniformity", 1.0) < self.config.porosity_uniformity_strong:
-            reasons_good.append("uniform porosity distribution across regions")
-        if row.get("Pore CV", 1.0) < 0.50:
-            reasons_good.append(f"consistent cell sizes (CV={row.get('Pore CV', 0):.2f})")
-        if row.get("Wall thickness variance", 100.0) < self.config.wall_variance_strong:
-            reasons_good.append("consistent wall thickness throughout")
+        # ── Weak signals (spec-aligned thresholds) ──────────────────
+        fi = _val("Fracture index")
+        if fi is not None and fi > cfg.fracture_index_weak:
+            reasons_bad.append(f"high fracture index ({fi:.4f}) — pre-existing micro-tears")
+        cr = _val("Connectivity ratio")
+        if cr is not None and cr < 0.50:
+            reasons_bad.append(f"low inter-pore connectivity ({cr:.2f}) — isolated pore network")
+        pore_cv = _val("Pore CV")
+        if pore_cv is not None and pore_cv > cfg.cell_size_cv_weak:
+            reasons_bad.append(f"high cell-size CV ({pore_cv:.2f} > {cfg.cell_size_cv_weak}) — highly irregular pore sizes")
+        trf = _val("Thin region fraction")
+        if trf is not None and trf > 0.40:
+            reasons_bad.append("large thin-wall fraction — structural support compromised")
+        por = _val("Porosity")
+        if por is not None and por > cfg.porosity_weak:
+            reasons_bad.append(f"high porosity ({por:.3f} > {cfg.porosity_weak}) — fragile aerated structure")
+        ci = _val("Clustering index")
+        if ci is not None and ci > cfg.clustering_weak:
+            reasons_bad.append(f"pore clustering (index={ci:.2f}) — heterogeneous pore distribution")
+        circ = _val("Circularity")
+        if circ is not None and circ < cfg.circularity_weak:
+            reasons_bad.append(f"low pore circularity ({circ:.2f} < {cfg.circularity_weak}) — collapsed/deformed cells")
+        hom = _val("Homogeneity")
+        if hom is not None and hom < cfg.homogeneity_weak:
+            reasons_bad.append(f"low texture homogeneity ({hom:.3f} < {cfg.homogeneity_weak}) — irregular texture")
 
-        # ── Classification narratives ──────────────────────
-        if row["Classification"] == "Weak / Crumbly":
-            label = "Weak / Crumbly"
+        # ── Strong signals (spec-aligned thresholds) ──────────────────
+        mwt = _val("Mean wall thickness")
+        if mwt is not None and mwt > cfg.wall_thickness_strong:
+            reasons_good.append(f"thick crumb walls ({mwt:.2f} px) — strong load-bearing structure")
+        if hom is not None and hom > cfg.homogeneity_strong:
+            reasons_good.append(f"high texture homogeneity ({hom:.3f} > {cfg.homogeneity_strong}) — uniform texture")
+        if cr is not None and cr > cfg.connectivity_strong:
+            reasons_good.append(f"high connectivity ({cr:.2f} > {cfg.connectivity_strong}) — continuous pore network")
+        if circ is not None and circ > cfg.circularity_strong:
+            reasons_good.append(f"high pore circularity ({circ:.2f} > {cfg.circularity_strong}) — stable, round cells")
+        pu = _val("Porosity uniformity")
+        if pu is not None and pu < cfg.porosity_uniformity_strong:
+            reasons_good.append("uniform porosity distribution")
+        if pore_cv is not None and pore_cv < 0.50:
+            reasons_good.append(f"consistent cell sizes (CV={pore_cv:.2f})")
+        wtv = _val("Wall thickness variance")
+        if wtv is not None and mwt is not None and wtv < cfg.wall_variance_strong and mwt > cfg.wall_thickness_strong:
+            reasons_good.append("thick and uniform walls")
+
+        classification = row.get("Classification", "")
+
+        if classification == "Cannot Determine":
+            return "Classification cannot be determined: insufficient reliable metrics due to image quality or segmentation issues."
+
+        if classification == "Weak / Crumbly":
             if reasons_bad:
                 return (
-                    f"{label}: driven by {', '.join(reasons_bad[:3])}. "
-                    f"Micro-tears or structural discontinuities are likely."
+                    f"Weak / Crumbly: {', '.join(reasons_bad[:3])}. "
+                    "Likely to crumble or fracture under stress."
                 )
-            return f"{label}: low composite score with unfavorable morphology."
+            return "Weak / Crumbly: low score across structural metrics with unfavorable morphology."
 
-        if row["Classification"] == "Strong":
+        if classification == "Strong":
             if reasons_good:
                 return (
                     f"Strong crumb: {', '.join(reasons_good[:3])}. "
-                    f"Pore network is stable and well-supported."
+                    "Pore network is stable and well-supported."
                 )
             return "Strong crumb: favorable wall support and connectivity across all metrics."
 

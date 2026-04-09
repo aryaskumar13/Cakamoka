@@ -313,138 +313,170 @@ def compute_parameter_correlations(means_df: pd.DataFrame, min_r_squared: float 
 
 def compute_structure_score(metrics: dict, config=None) -> tuple:
     """
-    Compute Structure Score (0-100) and classify as Strong or Weak based on structural metrics.
-    
-    Args:
-        metrics: dict with keys like 'pore_cv', 'porosity_uniformity', 'homogeneity', etc.
-        config: optional AnalyzerConfig for thresholds
-    
+    Compute Structure Score (0-100) using absolute-threshold rule voting per specification.
+
+    Rules per spec:
+      Porosity < 0.01 → STRONG dense structure
+      Porosity > 0.05 → WEAK fragile structure
+      Mean pore size small + low porosity → compact tight crumb → STRONG
+      Mean pore size > 150 → WEAK tendency
+      Cell size CV > 1.5 → WEAK (spec threshold)
+      Porosity uniformity low std → STRONG
+      Circularity > 0.85 → STRONG (spec threshold)
+      Circularity < 0.75 → WEAK (spec threshold)
+      Mean wall thickness high → STRONG
+      Wall thickness variance high → WEAK
+      Thick + uniform walls → STRONG; thick + variable → MODERATE
+      Connectivity > 4 → STRONG (spec threshold)
+      Clustering high → WEAK
+      Fracture index low → STRONG; high → WEAK
+      Homogeneity > 0.9 → STRONG (spec threshold)
+      Homogeneity < 0.8 → WEAK (spec threshold)
+
     Returns:
         tuple of (score: float, classification: str, reasons: list, interpretation: str)
     """
     from crumb_analysis_pipeline import AnalyzerConfig
     cfg = config or AnalyzerConfig()
-    
-    # ── GROUP 1: Uniformity (30%) ──
-    pore_cv = float(metrics.get('pore_cv', 0.5))
-    porosity_uniformity = float(metrics.get('porosity_uniformity', 0.1))
-    homogeneity = float(metrics.get('homogeneity', 0.4))
-    
-    # Normalize: lower is better for CV and uniformity, higher is better for homogeneity
-    uniformity_score = (1.0 - np.clip(pore_cv / 1.5, 0, 1)) * 0.33  # High CV = weak
-    uniformity_score += np.clip(1.0 - porosity_uniformity / 0.15, 0, 1) * 0.33  # High std = weak
-    uniformity_score += np.clip(homogeneity / 0.6, 0, 1) * 0.34  # Higher = good
-    uniformity_score = np.clip(uniformity_score * 100, 0, 100)
-    uniformity_weight = 0.30
-    
-    # ── GROUP 2: Wall Integrity (25%) ──
-    mean_wall_thickness = float(metrics.get('mean_wall_thickness', 3.0))
-    wall_thickness_var = float(metrics.get('wall_thickness_var', 5.0))
-    
-    # Normalize: higher thickness is better, lower variance is better
-    wall_integrity_score = np.clip(mean_wall_thickness / 6.0, 0, 1) * 0.6 * 100  # Good thickness
-    wall_integrity_score += np.clip(1.0 - wall_thickness_var / 10.0, 0, 1) * 0.4 * 100  # Consistent thickness
-    wall_integrity_score = np.clip(wall_integrity_score, 0, 100)
-    wall_weight = 0.25
-    
-    # ── GROUP 3: Network Stability (20%) ──
-    connectivity_ratio = float(metrics.get('connectivity_ratio', 0.25))
-    clustering_index = float(metrics.get('clustering_index', 1.0))
-    
-    # Normalize: higher connectivity is good, higher clustering (>1=clustered) is bad
-    network_stability = np.clip(connectivity_ratio / 0.5, 0, 1) * 0.5 * 100  # Higher connectivity = good
-    network_stability += np.clip(1.0 - clustering_index / 2.0, 0, 1) * 0.5 * 100  # Lower clustering = good  
-    network_stability = np.clip(network_stability, 0, 100)
-    network_weight = 0.20
-    
-    # ── GROUP 4: Cell Quality (15%) ──
-    mean_pore_size = float(metrics.get('mean_pore_size', 100.0))
-    circularity = float(metrics.get('circularity', 0.6))
-    
-    # Normalize: moderate pore size is good (not too large), higher circularity is good
-    cell_quality = np.clip(1.0 - abs(mean_pore_size - 100) / 150, 0, 1) * 0.4 * 100  # ~100px is ideal
-    cell_quality += np.clip(circularity / 0.8, 0, 1) * 0.6 * 100  # Higher circularity = good
-    cell_quality = np.clip(cell_quality, 0, 100)
-    cell_weight = 0.15
-    
-    # ── GROUP 5: Fracture Behavior (5%) ──
-    fracture_index = float(metrics.get('fracture_index', 0.02))
-    
-    # Normalize: lower fracture index is better (fewer internal fractures)
-    fracture_score = np.clip(1.0 - fracture_index / 0.05, 0, 1) * 100  # Low fractures = good
-    fracture_weight = 0.05
-    
-    # ── GROUP 6: Porosity (5%) ──
-    porosity = float(metrics.get('porosity', 0.2))
-    
-    # Normalize: moderate porosity (0.15-0.35) is ideal
-    porosity_score = np.clip(1.0 - abs(porosity - 0.25) / 0.25, 0, 1) * 100  # Mid-range is good
-    porosity_weight = 0.05
-    
-    # ── COMPUTE BASE SCORE ──
-    base_score = (uniformity_score * uniformity_weight + 
-                   wall_integrity_score * wall_weight +
-                   network_stability * network_weight +
-                   cell_quality * cell_weight +
-                   fracture_score * fracture_weight +
-                   porosity_score * porosity_weight)
-    
-    # ── CRITICAL INTERACTION RULES ──
-    adjusted_score = base_score
-    interaction_notes = []
-    
-    # Rule 1: High Pore CV AND (high clustering OR high connectivity) → WEAK
-    if pore_cv > 0.8 and (clustering_index > cfg.clustering_weak or connectivity_ratio < 0.15):
-        adjusted_score = min(adjusted_score, 50)  # Force weak territory
-        interaction_notes.append(f"Irregular pore sizes + poor network stability = fracture risk")
-    
-    # Rule 2: High wall thickness variance → bias toward WEAK
-    if wall_thickness_var > cfg.wall_variance_strong:
-        adjusted_score -= 15
-        interaction_notes.append(f"Inconsistent wall thickness reduces structural reliability")
-    
-    # Rule 3: High circularity alone does NOT indicate strong structure
-    # (but combined with thick walls and low CV = strong)
-    if circularity > 0.75 and homogeneity < 0.35 and mean_wall_thickness < 2.5:
-        adjusted_score -= 10
-        interaction_notes.append(f"Regular pores alone insufficient without strong walls")
-    
-    # Ensure score stays in 0-100 range
-    adjusted_score = np.clip(adjusted_score, 0, 100)
-    
-    # ── CLASSIFY ──
+
+    votes = 0
+    max_votes = 0
+    reasons = []
+
+    def _vote(value, strong_fn, weak_fn, strong_msg: str = "", weak_msg: str = ""):
+        nonlocal votes, max_votes
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return
+        max_votes += 1
+        if strong_fn(value):
+            votes += 1
+            if strong_msg:
+                reasons.append(f"[+] {strong_msg}")
+        elif weak_fn(value):
+            votes -= 1
+            if weak_msg:
+                reasons.append(f"[-] {weak_msg}")
+
+    porosity        = metrics.get('porosity', None)
+    mean_pore_size  = metrics.get('mean_pore_size', None)
+    pore_cv         = metrics.get('pore_cv', None)
+    por_uniformity  = metrics.get('porosity_uniformity', None)
+    circularity     = metrics.get('circularity', None)
+    mean_wall       = metrics.get('mean_wall_thickness', None)
+    wall_var        = metrics.get('wall_thickness_var', None)
+    connectivity    = metrics.get('connectivity_ratio', None)
+    clustering      = metrics.get('clustering_index', None)
+    fracture_idx    = metrics.get('fracture_index', None)
+    homogeneity     = metrics.get('homogeneity', None)
+
+    # 1. Porosity (AERATION)
+    _vote(porosity,
+          strong_fn=lambda v: v < 0.01,
+          weak_fn=lambda v: v > 0.05,
+          strong_msg=f"Low porosity ({porosity:.3f}) → dense, strong structure",
+          weak_msg=f"High porosity ({porosity:.3f} > 0.05) → fragile, aerated")
+
+    # 2. Mean pore size (AERATION)
+    _vote(mean_pore_size,
+          strong_fn=lambda v: v < 80,
+          weak_fn=lambda v: v > 150,
+          strong_msg=f"Small mean pore size ({mean_pore_size:.1f} px) → compact crumb",
+          weak_msg=f"Large mean pore size ({mean_pore_size:.1f} px > 150) → expanded cells")
+
+    # 3. Cell size CV (UNIFORMITY)
+    _vote(pore_cv,
+          strong_fn=lambda v: v < 0.5,
+          weak_fn=lambda v: v > 1.5,
+          strong_msg=f"Uniform cell sizes (CV={pore_cv:.2f})",
+          weak_msg=f"High cell size variability (CV={pore_cv:.2f} > 1.5)")
+
+    # 4. Porosity uniformity
+    _vote(por_uniformity,
+          strong_fn=lambda v: v < 0.05,
+          weak_fn=lambda v: v > 0.10,
+          strong_msg="Even porosity distribution across regions",
+          weak_msg="Spatially uneven porosity distribution")
+
+    # 5. Circularity (GEOMETRY / CELL SHAPE STABILITY)
+    _vote(circularity,
+          strong_fn=lambda v: v > 0.85,
+          weak_fn=lambda v: v < 0.75,
+          strong_msg=f"High pore circularity ({circularity:.2f} > 0.85) → stable, undeformed bubbles",
+          weak_msg=f"Low pore circularity ({circularity:.2f} < 0.75) → collapsed/deformed cells")
+
+    # 6. Mean wall thickness (WALL STRUCTURE)
+    _vote(mean_wall,
+          strong_fn=lambda v: v > 4.0,
+          weak_fn=lambda v: v < 2.0,
+          strong_msg=f"Thick walls ({mean_wall:.2f} px) → strong load-bearing structure",
+          weak_msg=f"Thin walls ({mean_wall:.2f} px < 2.0) → weak structural support")
+
+    # 7. Wall thickness variance — thick+uniform=strong; any high variance=weak
+    if wall_var is not None and not np.isnan(wall_var):
+        max_votes += 1
+        mwt_val = mean_wall if mean_wall is not None else 0.0
+        if wall_var < 4.0 and mwt_val > 4.0:
+            votes += 1
+            reasons.append(f"[+] Thick and uniform walls (variance={wall_var:.2f}) → STRONG")
+        elif wall_var >= 4.0:
+            votes -= 1
+            reasons.append(f"[-] Inconsistent wall thickness (variance={wall_var:.2f}) → structurally unreliable")
+
+    # 8. Connectivity (NETWORK)
+    _vote(connectivity,
+          strong_fn=lambda v: v > 4.0,
+          weak_fn=lambda v: v < 0.5,
+          strong_msg=f"High connectivity ({connectivity:.2f} > 4) → continuous crumb network",
+          weak_msg=f"Low connectivity ({connectivity:.2f}) → isolated pore regions")
+
+    # 9. Clustering (NETWORK)
+    _vote(clustering,
+          strong_fn=lambda v: v < 1.0,
+          weak_fn=lambda v: v > 1.5,
+          strong_msg="Low pore clustering → even spatial distribution",
+          weak_msg=f"Pore clustering (index={clustering:.2f} > 1.5) → heterogeneous structure")
+
+    # 10. Fracture index (FRACTURE BEHAVIOUR)
+    _vote(fracture_idx,
+          strong_fn=lambda v: v < 0.01,
+          weak_fn=lambda v: v > 0.03,
+          strong_msg=f"Low fracture index ({fracture_idx:.4f}) → resistant to fracture",
+          weak_msg=f"High fracture index ({fracture_idx:.4f} > 0.03) → easy fracture / micro-tears")
+
+    # 11. Homogeneity (TEXTURE)
+    _vote(homogeneity,
+          strong_fn=lambda v: v > 0.9,
+          weak_fn=lambda v: v < 0.8,
+          strong_msg=f"High texture homogeneity ({homogeneity:.3f} > 0.9) → uniform texture",
+          weak_msg=f"Low texture homogeneity ({homogeneity:.3f} < 0.8) → irregular texture")
+
+    # ── Score & Classify ──
+    if max_votes > 0:
+        adjusted_score = float(votes + max_votes) / float(2 * max_votes) * 100.0
+    else:
+        adjusted_score = 50.0
+    adjusted_score = float(np.clip(adjusted_score, 0, 100))
+
     if adjusted_score >= 65:
         classification = "Strong"
-        interpretation = "Structure is cohesive with stable pore network and strong walls. Cake will slice cleanly without excessive crumbling."
+        interpretation = (
+            "Structure is cohesive with stable pore network and strong walls. "
+            "Cake will slice cleanly without excessive crumbling."
+        )
+    elif adjusted_score >= 40:
+        classification = "Moderate"
+        interpretation = (
+            "Intermediate structure — some favorable metrics offset by weaknesses. "
+            "May crumble under significant mechanical stress."
+        )
     else:
         classification = "Weak"
-        interpretation = "Structure is prone to crumbling due to irregular pores or poor wall support. Cake may fracture or shed crumbs under stress."
-    
-    # ── MECHANISTIC REASONS ──
-    reasons = []
-    
-    # Check dominant factors
-    if uniformity_score < 50:
-        reasons.append(f"Uneven pore distribution (CV={pore_cv:.2f}) creates weak points for crack propagation")
-    if wall_integrity_score < 50:
-        reasons.append(f"Thin or inconsistent walls (thickness variance={wall_thickness_var:.2f}) cannot support pore pressure")
-    if network_stability < 50:
-        reasons.append(f"Poor connectivity ratio ({connectivity_ratio:.2f}) means pores are isolated—fractures don't transfer stress")
-    if cell_quality < 50 and circularity < 0.5:
-        reasons.append(f"Irregular pore shapes (circularity={circularity:.2f}) create stress concentration points")
-    if fracture_index > 0.03:
-        reasons.append(f"High fracture index ({fracture_index:.4f}) indicates pre-existing micro-tears")
-    
-    if not reasons:
-        if adjusted_score >= 75:
-            reasons.append(f"Excellent uniformity and wall integrity support stable gas cell network")
-        elif adjusted_score >= 65:
-            reasons.append(f"Balanced pore-wall geometry maintains structural coherence despite minor irregularities")
-        else:
-            reasons.append(f"Cumulative effect of moderate defects reduces structural reliability")
-    
-    reasons.extend(interaction_notes)
-    
+        interpretation = (
+            "Structure is prone to crumbling due to irregular pores or poor wall support. "
+            "Cake may fracture or shed crumbs under stress."
+        )
+
+    # Return top 3 most decisive reasons
     return adjusted_score, classification, reasons[:3], interpretation
 
 def compute_maxshear_relationships(means_df: pd.DataFrame, min_points: int = 3) -> list:
@@ -752,13 +784,20 @@ def analyze_cake_image_basic(image):
     }
 
 def run_robust_crumb_analysis(uploaded_items: list) -> tuple:
-    """Run crumb-analysis pipeline metrics on uploaded files and return scored DataFrame."""
+    """Run crumb-analysis pipeline metrics on uploaded files and return scored DataFrame.
+
+    Returns:
+        (scored_df, image_map, errors, sample_warnings)
+        sample_warnings: dict mapping sample_label → list of warning strings
+    """
     cfg = AnalyzerConfig(debug_visualization=False, try_imagej=False)
     analyzer = CrumbAnalyzer(cfg)
 
     rows = []
     image_map = {}
     errors = {}
+    sample_warnings: dict = {}
+    sample_seg_confidence: dict = {}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_root = Path(tmpdir)
@@ -779,6 +818,12 @@ def run_robust_crumb_analysis(uploaded_items: list) -> tuple:
                 gray, norm, blur = analyzer._preprocess(rgb)
                 crumb, pores, roi = analyzer._segment_crumb(blur)
 
+                # ── Validate segmentation quality ──
+                seg_confidence, seg_warnings = analyzer._validate_segmentation(gray, norm, pores, roi)
+                sample_seg_confidence[sample_label] = seg_confidence
+                if seg_warnings:
+                    sample_warnings[sample_label] = seg_warnings
+
                 pore = analyzer._pore_features(pores, roi)
                 wall, _, _ = analyzer._wall_features(crumb)
                 conn, _, _, _ = analyzer._connectivity_features(crumb)
@@ -789,6 +834,7 @@ def run_robust_crumb_analysis(uploaded_items: list) -> tuple:
                 rows.append(
                     {
                         "Sample name": sample_label,
+                        "Segmentation confidence": seg_confidence,
                         "Porosity": pore["porosity"],
                         "Mean pore size": pore["mean_pore_size"],
                         "Pore CV": pore["pore_cv"],
@@ -810,10 +856,19 @@ def run_robust_crumb_analysis(uploaded_items: list) -> tuple:
                 errors[sample_label] = str(exc)
 
     if not rows:
-        return None, image_map, errors
+        return None, image_map, errors, sample_warnings
 
     metrics_df = pd.DataFrame(rows)
-    scored_df = analyzer._compute_scores(metrics_df)
+
+    # Score each row with its own segmentation confidence context
+    scored_rows = []
+    for _, row in metrics_df.iterrows():
+        seg_conf = sample_seg_confidence.get(row["Sample name"], "HIGH")
+        single_df = pd.DataFrame([row])
+        scored = analyzer._compute_scores(single_df, seg_confidence=seg_conf)
+        scored_rows.append(scored.iloc[0])
+    scored_df = pd.DataFrame(scored_rows).reset_index(drop=True)
+
     scored_df["Interpretation"] = scored_df.apply(analyzer._interpret_row, axis=1)
 
     numeric_cols = [
@@ -835,7 +890,7 @@ def run_robust_crumb_analysis(uploaded_items: list) -> tuple:
         "Crumb Strength Score",
     ]
     scored_df[numeric_cols] = scored_df[numeric_cols].round(4)
-    return scored_df, image_map, errors
+    return scored_df, image_map, errors, sample_warnings
 
 # ─────────────────────────────────────────────
 # SIDEBAR — SAMPLE SETUP
@@ -1836,14 +1891,23 @@ with tab_image:
         st.markdown("<hr class='thin-divider'>", unsafe_allow_html=True)
 
         try:
-            robust_df, image_map, robust_errors = run_robust_crumb_analysis(uploaded_images)
+            robust_df, image_map, robust_errors, robust_warnings = run_robust_crumb_analysis(uploaded_images)
         except Exception as exc:
-            robust_df, image_map, robust_errors = None, {}, {"Pipeline": str(exc)}
+            robust_df, image_map, robust_errors, robust_warnings = None, {}, {"Pipeline": str(exc)}, {}
 
         if robust_df is not None and not robust_df.empty:
+            # ── Global warnings banner ──
+            all_warnings = [w for ws in robust_warnings.values() for w in ws]
+            if all_warnings:
+                st.warning(
+                    "**Image quality warnings detected** — some metrics may be unreliable:\n\n"
+                    + "\n\n".join(f"• {w}" for w in all_warnings)
+                )
+
             st.markdown("<p class='section-title'>Robust Crumb Metrics (all uploaded samples)</p>", unsafe_allow_html=True)
             display_cols = [
                 "Sample name",
+                "Segmentation confidence",
                 "Porosity",
                 "Mean pore size",
                 "Pore CV",
@@ -1862,22 +1926,41 @@ with tab_image:
                 "Crumb Strength Score",
                 "Classification",
             ]
+            # Only show columns that exist in the dataframe
+            display_cols = [c for c in display_cols if c in robust_df.columns]
             st.dataframe(robust_df[display_cols].sort_values("Crumb Strength Score", ascending=False), use_container_width=True, hide_index=True)
 
-            st.markdown("<p class='sub-text'>Easy read: higher wall thickness and connectivity with lower fracture index generally indicates stronger crumb structure.</p>", unsafe_allow_html=True)
+            st.markdown("<p class='sub-text'>Higher wall thickness and connectivity with lower fracture index generally indicates stronger crumb structure. Metrics from LOW confidence images should be treated with caution.</p>", unsafe_allow_html=True)
 
             for _, row in robust_df.sort_values("Crumb Strength Score", ascending=False).iterrows():
                 sample_label = row["Sample name"]
                 st.markdown(f"<p class='section-title' style='margin-top:14px;'>{sample_label}</p>", unsafe_allow_html=True)
+
+                # Per-sample warnings
+                if sample_label in robust_warnings:
+                    for w in robust_warnings[sample_label]:
+                        st.warning(f"⚠ {sample_label}: {w}")
+
                 col_img1, col_img2 = st.columns([1, 2])
                 with col_img1:
                     if sample_label in image_map:
                         st.image(image_map[sample_label], use_container_width=True, caption=f"{sample_label} crumb")
                 with col_img2:
-                    st.markdown(
-                        f"**Classification:** {row['Classification']} | "
-                        f"**Score:** {row['Crumb Strength Score']:.1f}/100"
-                    )
+                    classification = row.get("Classification", "Unknown")
+                    seg_conf = row.get("Segmentation confidence", "—")
+                    score_val = row.get("Crumb Strength Score", 0.0)
+
+                    if classification == "Cannot Determine":
+                        st.error(
+                            f"**Classification: Cannot Determine** — fewer than 70% of metrics were "
+                            f"reliably computable for this image. See warnings above."
+                        )
+                    else:
+                        st.markdown(
+                            f"**Classification:** {classification} | "
+                            f"**Score:** {score_val:.1f}/100 | "
+                            f"**Segmentation confidence:** {seg_conf}"
+                        )
                     st.markdown(f"**Interpretation:** {row['Interpretation']}")
 
                     quick_metrics = pd.DataFrame(
@@ -1907,6 +1990,19 @@ with tab_image:
                                 row["Connectivity ratio"],
                                 row["Fracture index"],
                                 row["Homogeneity"],
+                            ],
+                            "Threshold (STRONG / WEAK)": [
+                                "< 0.01 / > 0.05",
+                                "< 80 / > 150 px",
+                                "< 0.5 / > 1.5",
+                                "> 0.85 / < 0.75",
+                                "< 0.05 / > 0.10",
+                                "< 1.0 / > 1.5",
+                                "> 4.0 / < 2.0 px",
+                                "< 4.0 (with thick walls) / ≥ 4.0",
+                                "> 4.0 / < 0.5",
+                                "< 0.01 / > 0.03",
+                                "> 0.90 / < 0.80",
                             ],
                         }
                     )
